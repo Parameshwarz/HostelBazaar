@@ -1,14 +1,15 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import Browse from './pages/Browse';
+import { Messages } from './pages/Messages';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ItemDetails from './pages/ItemDetails';
 import Profile from './pages/Profile';
-import { Messages } from './pages/Messages';
 import NewItem from './pages/NewItem';
-import Browse from './pages/Browse';
 import { AuthProvider } from './contexts/AuthContext';
 import { Toaster } from 'react-hot-toast';
 
@@ -17,19 +18,24 @@ function App() {
     <AuthProvider>
       <Router>
         <Toaster position="top-center" />
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/items/:id" element={<ItemDetails />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/messages/:chatId" element={<Messages />} />
-            <Route path="/items/new" element={<NewItem />} />
-            <Route path="/browse" element={<Browse />} />
-          </Route>
-        </Routes>
+        <div className="min-h-screen bg-gray-50 flex flex-col">
+          <Navbar />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/browse" element={<Browse />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/messages/:chatId" element={<Messages />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/items/:id" element={<ItemDetails />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/items/new" element={<NewItem />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
       </Router>
     </AuthProvider>
   );

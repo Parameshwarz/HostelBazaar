@@ -21,41 +21,6 @@ import { MessageBubble } from '../components/MessageBubble';
 
 type MessageAction = 'edit' | 'delete' | 'reply' | 'copy';
 
-const MessageOptionsMenu = ({ 
-  message, 
-  onAction 
-}: { 
-  message: Message, 
-  onAction: (action: MessageAction) => void 
-}) => (
-  <div className="absolute right-2 top-2 bg-white shadow-lg rounded-lg py-1 min-w-[160px] z-10">
-    <button 
-      onClick={() => onAction('edit')} 
-      className="w-full px-4 py-2 text-left hover:bg-gray-50 text-sm"
-    >
-      Edit
-    </button>
-    <button 
-      onClick={() => onAction('delete')} 
-      className="w-full px-4 py-2 text-left hover:bg-gray-50 text-sm text-red-600"
-    >
-      Delete
-    </button>
-    <button 
-      onClick={() => onAction('reply')} 
-      className="w-full px-4 py-2 text-left hover:bg-gray-50 text-sm"
-    >
-      Reply
-    </button>
-    <button 
-      onClick={() => onAction('copy')} 
-      className="w-full px-4 py-2 text-left hover:bg-gray-50 text-sm"
-    >
-      Copy
-    </button>
-  </div>
-);
-
 export const Messages = () => {
   const { chatId } = useParams();
   const navigate = useNavigate();
@@ -83,37 +48,6 @@ export const Messages = () => {
       setActiveChat(chatId);
     }
   }, [chatId]);
-
-  useEffect(() => {
-    if (authLoading) return;
-    
-    if (!user) {
-      console.log('No authenticated user');
-      setLoading(false);
-      return;
-    }
-
-    console.log('Loading chats for user:', user.id);
-    fetchChats();
-
-    // Subscribe to chat updates
-    const subscription = supabase
-      .channel('chats')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'chats',
-        filter: `participant_1.eq.${user.id},participant_2.eq.${user.id}` 
-      }, (payload) => {
-        console.log('Chat update received:', payload);
-        fetchChats();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [user, authLoading]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -232,7 +166,11 @@ export const Messages = () => {
         .eq('chat_id', activeChat)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching messages:', error);
+        toast.error('Failed to load messages');
+        return;
+      }
 
       // Then fetch reactions
       if (messages && messages.length > 0) {
@@ -244,9 +182,12 @@ export const Messages = () => {
           .select('*')
           .in('message_id', messageIds);
 
-        if (reactionsError) throw reactionsError;
+        if (reactionsError) {
+          console.error('Error fetching reactions:', reactionsError);
+          // Don't return, continue with messages without reactions
+        }
 
-        // Get usernames for reaction users
+        // Get usernames for reaction users if we have reactions
         if (reactions && reactions.length > 0) {
           const userIds = [...new Set(reactions.map(r => r.user_id))];
           const { data: users, error: usersError } = await supabase
@@ -254,10 +195,13 @@ export const Messages = () => {
             .select('id, username')
             .in('id', userIds);
 
-          if (usersError) throw usersError;
+          if (usersError) {
+            console.error('Error fetching user profiles:', usersError);
+            // Continue with reactions without usernames
+          }
 
           // Create a map of user IDs to usernames
-          const userMap = new Map(users?.map(u => [u.id, u.username]));
+          const userMap = new Map(users?.map(u => [u.id, u.username]) || []);
 
           // Add username to reactions
           const reactionsWithUsernames = reactions.map(reaction => ({
@@ -271,7 +215,6 @@ export const Messages = () => {
             message_reactions: reactionsWithUsernames.filter(r => r.message_id === message.id)
           }));
 
-          console.log('Messages with reactions:', messagesWithReactions);
           setMessages(messagesWithReactions);
         } else {
           setMessages(messages);
@@ -281,7 +224,7 @@ export const Messages = () => {
         setMessages([]);
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error('Error in fetchMessages:', error);
       toast.error('Failed to load messages');
     } finally {
       setIsLoading(false);
@@ -296,6 +239,7 @@ export const Messages = () => {
   useEffect(() => {
     if (!user || !activeChat) return;
 
+    // Set up realtime subscriptions
     const messagesSubscription = supabase
       .channel(`messages:${activeChat}`)
       .on('postgres_changes', { 
@@ -303,8 +247,18 @@ export const Messages = () => {
         schema: 'public', 
         table: 'messages',
         filter: `chat_id=eq.${activeChat}`
-      }, () => {
-        fetchMessages();
+      }, (payload) => {
+        // Update messages locally instead of fetching again
+        if (payload.eventType === 'INSERT') {
+          setMessages(prev => [...prev, payload.new as Message]);
+          scrollToBottom();
+        } else if (payload.eventType === 'UPDATE') {
+          setMessages(prev => 
+            prev.map(msg => msg.id === payload.new.id ? payload.new as Message : msg)
+          );
+        } else if (payload.eventType === 'DELETE') {
+          setMessages(prev => prev.filter(msg => msg.id !== payload.old.id));
+        }
       })
       .subscribe();
 
@@ -315,109 +269,16 @@ export const Messages = () => {
         schema: 'public', 
         table: 'message_reactions'
       }, () => {
+        // Only fetch reactions for existing messages
         fetchMessages();
       })
       .subscribe();
-
-    // Initial fetch
-    fetchMessages();
 
     return () => {
       messagesSubscription.unsubscribe();
       reactionsSubscription.unsubscribe();
     };
   }, [activeChat, user]);
-
-  useEffect(() => {
-    if (!user || !activeChat) return;
-
-    // Subscribe to ALL changes in the messages table for this chat
-    const messagesSubscription = supabase
-      .channel(`messages:${activeChat}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'messages',
-        filter: `chat_id=eq.${activeChat}`
-      }, (payload) => {
-        console.log('Message change received:', payload);
-        
-        if (payload.eventType === 'INSERT') {
-          // Only add the message if it's not from the current user
-          // (we already added our own messages optimistically)
-          if (payload.new.sender_id !== user?.id) {
-            setMessages(prev => [...prev, payload.new as Message]);
-            scrollToBottom();
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === payload.new.id ? payload.new as Message : msg
-            )
-          );
-        } else if (payload.eventType === 'DELETE') {
-          setMessages(prev => 
-            prev.filter(msg => msg.id !== payload.old.id)
-          );
-        }
-      })
-      .subscribe();
-
-    // Subscribe to chat updates
-    const chatSubscription = supabase
-      .channel(`chat:${activeChat}`)
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'chats',
-        filter: `id=eq.${activeChat}`
-      }, (payload) => {
-        console.log('Chat update received:', payload);
-        // Update the chat in the list
-        setChats(prev => 
-          prev.map(chat => 
-            chat.id === activeChat 
-              ? { ...chat, 
-                  last_message: payload.new.last_message,
-                  last_message_at: payload.new.last_message_at 
-                }
-              : chat
-          )
-        );
-      })
-      .subscribe();
-
-    // Subscribe to reaction changes
-    const reactionSubscription = supabase
-      .channel('reactions')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'message_reactions',
-        filter: `message_id=eq.${messages.map(m => m.id).join(',')}`
-      }, (payload: {
-        new: { message_id: string; emoji: string } | null;
-        old: { message_id: string; emoji: string } | null;
-        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-      }) => {
-        setMessages(prev => prev.map(message => {
-          if (message.id === payload.new?.message_id) {
-            return {
-              ...message,
-              reactions: message.reactions || []
-            };
-          }
-          return message;
-        }));
-      })
-      .subscribe();
-
-    return () => {
-      messagesSubscription.unsubscribe();
-      chatSubscription.unsubscribe();
-      reactionSubscription.unsubscribe();
-    };
-  }, [activeChat, user?.id]);
 
   useEffect(() => {
     // If this is a new chat initiated from an item
@@ -489,90 +350,124 @@ export const Messages = () => {
     if (!user) return;
 
     try {
-      console.log('Fetching chats for user:', user.id);
-
-      // First get the chats
+      // First get the chats with just the basic info
       const { data: chatsData, error: chatsError } = await supabase
         .from('chats')
-        .select('*')
+        .select(`
+          *,
+          items (
+            id,
+            title,
+            images
+          )
+        `)
         .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
         .order('created_at', { ascending: false });
 
-      console.log('Raw chats data:', chatsData);
+      if (chatsError) throw chatsError;
 
-      if (chatsError) {
-        console.error('Error fetching chats:', chatsError);
-        return;
-      }
+      // Get all other participants' profiles
+      const otherParticipantIds = chatsData?.map(chat => 
+        chat.participant_1 === user.id ? chat.participant_2 : chat.participant_1
+      ) || [];
 
-      if (!chatsData || chatsData.length === 0) {
-        console.log('No chats found');
-        setChats([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get all unique participant IDs (excluding current user)
-      const participantIds = chatsData
-        .map(chat => [chat.participant_1, chat.participant_2])
-        .flat()
-        .filter(id => id !== user.id)
-        .filter((id, index, self) => self.indexOf(id) === index);
-
-      // Fetch profiles for all participants
-      const { data: profilesData, error: profilesError } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('*')
-        .in('id', participantIds);
+        .select('id, username, avatar_url')
+        .in('id', otherParticipantIds);
 
       if (profilesError) {
         console.error('Error fetching profiles:', profilesError);
-        return;
+        throw profilesError;
       }
 
-      console.log('Profiles data:', profilesData);
+      // Create a map of profiles for easy lookup
+      const profileMap = new Map(profiles?.map(p => [p.id, p]));
 
-      const profilesMap = new Map(
-        profilesData?.map(profile => [profile.id, profile]) || []
-      );
-
-      const processedChats = chatsData.map((chat: any) => {
-        const isParticipant1 = chat.participant_1 === user.id;
-        const otherUserId = isParticipant1 ? chat.participant_2 : chat.participant_1;
-        const otherUserProfile = profilesMap.get(otherUserId);
+      // Transform chats with profile data
+      const transformedChats = chatsData?.map(chat => {
+        const otherParticipantId = chat.participant_1 === user.id 
+          ? chat.participant_2 
+          : chat.participant_1;
+        const otherProfile = profileMap.get(otherParticipantId);
 
         return {
-          id: chat.id,
-          created_at: chat.created_at,
-          updated_at: chat.updated_at,
-          last_message: chat.last_message,
-          last_message_at: chat.last_message_at,
-          participant_1: chat.participant_1,
-          participant_2: chat.participant_2,
+          ...chat,
           other_user: {
-            id: otherUserId,
-            username: otherUserProfile?.username || 'Unknown User',
-            avatar_url: otherUserProfile?.avatar_url || '/default-avatar.png',
+            id: otherParticipantId,
+            username: otherProfile?.username || 'Unknown User',
+            avatar_url: otherProfile?.avatar_url || 'https://ui-avatars.com/api/?name=Unknown+User',
             is_online: false
           }
-        } as Chat;
-      });
+        };
+      }) || [];
 
-      console.log('Processed chats:', processedChats);
-      setChats(processedChats);
-
-      if (!activeChat && processedChats.length > 0) {
-        const firstChatId = processedChats[0].id;
-        setActiveChat(firstChatId);
-        navigate(`/messages/${firstChatId}`);
-      }
+      setChats(transformedChats);
     } catch (error) {
-      console.error('Error in fetchChats:', error);
+      console.error('Error fetching chats:', error);
       toast.error('Failed to load chats');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const itemId = searchParams.get('item');
+    if (itemId && user) {
+      const initializeChat = async () => {
+        try {
+          // Get item details
+          const { data: item, error: itemError } = await supabase
+            .from('items')
+            .select('*')
+            .eq('id', itemId)
+            .single();
+
+          if (itemError) throw itemError;
+
+          // Check if chat already exists
+          const { data: existingChat, error: chatError } = await supabase
+            .from('chats')
+            .select('id')
+            .or(`and(participant_1.eq.${user.id},participant_2.eq.${item.uploader_id}),and(participant_1.eq.${item.uploader_id},participant_2.eq.${user.id})`)
+            .eq('item_id', itemId)
+            .single();
+
+          if (chatError && chatError.code !== 'PGRST116') {
+            throw chatError;
+          }
+
+          if (existingChat) {
+            navigate(`/messages/${existingChat.id}`);
+            return;
+          }
+
+          // Create new chat
+          const { data: newChat, error: createError } = await supabase
+            .from('chats')
+            .insert({
+              participant_1: user.id,
+              participant_2: item.uploader_id,
+              item_id: itemId
+            })
+            .select('id')
+            .single();
+
+          if (createError) throw createError;
+
+          if (newChat) {
+            navigate(`/messages/${newChat.id}`);
+          }
+        } catch (error) {
+          console.error('Error initializing chat:', error);
+          toast.error('Failed to start chat');
+          navigate('/messages');
+        }
+      };
+
+      initializeChat();
+    }
+  }, [user, searchParams]);
 
   const handleScroll = () => {
     if (!chatContainerRef.current) return;
@@ -934,19 +829,17 @@ export const Messages = () => {
               onScroll={handleScroll}
             >
               {isLoading ? (
-                <div className="flex-1 flex items-center justify-center">
+                <div className="flex-1 flex items-center justify-center p-8">
                   <div className="text-gray-500">Loading messages...</div>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="text-gray-500">No messages yet. Start a conversation!</div>
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto px-12" ref={messagesEndRef}>
                   <div className="space-y-6">
-                    {messages.length === 0 ? (
-                      <div className="text-center text-gray-500 mt-8">
-                        No messages yet. Start a conversation!
-                      </div>
-                    ) : (
-                      renderMessages()
-                    )}
+                    {renderMessages()}
                   </div>
                 </div>
               )}
