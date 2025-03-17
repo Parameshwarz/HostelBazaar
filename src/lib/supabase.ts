@@ -8,12 +8,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Create a single instance with proper configuration
+// Add retry logic
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false
+    autoRefreshToken: true
   },
   global: {
     headers: { 'x-application-name': 'hostel-bazaar' }

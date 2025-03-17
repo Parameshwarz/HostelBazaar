@@ -20,7 +20,7 @@ import {
   Paperclip
 } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext.tsx';
 import { supabase } from '../lib/supabase';
 import type { Chat, Message, MessageReaction, MessageSender, DatabaseMessage, DatabaseMessageReaction } from '../types';
 import { toast } from 'react-hot-toast';
@@ -72,7 +72,7 @@ export const Messages = () => {
   const [activeChat, setActiveChat] = useState<string | null>(chatId || null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -109,7 +109,6 @@ export const Messages = () => {
   const [showTrustScore, setShowTrustScore] = useState(false);
   const [showDealProgress, setShowDealProgress] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [authLoading, setAuthLoading] = useState(true);
 
   // Add message validation constants
   const MIN_MESSAGE_LENGTH = 2;
@@ -133,8 +132,22 @@ export const Messages = () => {
       navigate('/login');
       return;
     }
-    setAuthLoading(false);
+
+    const checkSession = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session) {
+        navigate('/login');
+      }
+    };
+
+    checkSession();
   }, [user, navigate]);
+
+  useEffect(() => {
+    if (chatId) {
+      setActiveChat(chatId);
+    }
+  }, [chatId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -166,12 +179,6 @@ export const Messages = () => {
       subscription.unsubscribe();
     };
   }, [user, authLoading]);
-
-  useEffect(() => {
-    if (chatId) {
-      setActiveChat(chatId);
-    }
-  }, [chatId]);
 
   useEffect(() => {
     if (!user || !activeChat) return;

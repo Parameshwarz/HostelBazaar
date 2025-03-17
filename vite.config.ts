@@ -4,11 +4,12 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/HostelBazaar/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['react', 'react-dom'],
+    mainFields: ['module', 'jsnext:main', 'jsnext'],
   },
   optimizeDeps: {
     include: [
@@ -25,8 +26,6 @@ export default defineConfig({
     exclude: [],
   },
   build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
     commonjsOptions: {
       include: [/node_modules/],
       transformMixedEsModules: true
@@ -49,5 +48,6 @@ export default defineConfig({
     watch: {
       usePolling: true
     }
-  }
+  },
+  base: '/HostelBazaar/',
 });

@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabase } from "../supabaseClient";
 import { calculateSimilarity } from "../../utils/searchUtils"
 import { CATEGORIES } from '../../types/categories';
 

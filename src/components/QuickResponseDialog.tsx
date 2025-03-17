@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
 import {
   Dialog,
   DialogContent,
@@ -13,17 +13,14 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import { useAuth } from '../hooks/useAuth';
 
 interface QuickResponseDialogProps {
   requestId: string;
   requestTitle: string;
   categoryId: string;
-  onClose: () => void;
 }
 
-export default function QuickResponseDialog({ requestId, requestTitle, categoryId, onClose }: QuickResponseDialogProps) {
-  const { user } = useAuth();
+export function QuickResponseDialog({ requestId, requestTitle, categoryId }: QuickResponseDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,6 +35,7 @@ export default function QuickResponseDialog({ requestId, requestTitle, categoryI
     setIsSubmitting(true);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
       // Create the match record with basic item information

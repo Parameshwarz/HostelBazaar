@@ -23,7 +23,7 @@ import { Input } from '../ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { Textarea } from '../ui/textarea';
 import { Button } from '../ui/button';
-import QuickResponseDialog from '../QuickResponseDialog';
+import { QuickResponseDialog } from '../QuickResponseDialog';
 
 interface RequestCardProps {
   request: RequestItem;
@@ -178,7 +178,6 @@ export default function RequestCard({
           requestId={request.id}
           requestTitle={request.title}
           categoryId={request.category_id}
-          onClose={() => {}}
         />
       )}
     </motion.div>

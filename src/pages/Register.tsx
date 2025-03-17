@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
-import { useAuth } from '../hooks/useAuth';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -12,53 +11,61 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setUser = useAuthStore((state) => state.setUser);
-  const { signUp, signIn } = useAuth();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // First sign up
-      const { user } = await signUp(email, password);
+      // First check if username is taken
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('username', username)
+        .single();
 
-      if (user) {
-        // Create profile
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: user.id,
-              username,
-              email: user.email,
-            },
-          ]);
-
-        if (profileError) throw profileError;
-
-        // Then sign in
-        const { user: signInUser } = await signIn(email, password);
-
-        if (signInUser) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', signInUser.id)
-            .single();
-
-          setUser({
-            id: signInUser.id,
-            email: signInUser.email!,
-            username: profile.username,
-            avatar_url: profile.avatar_url,
-          });
-
-          toast.success('Welcome to Hostel Bazaar!');
-          navigate('/');
-        }
+      if (existingUser) {
+        throw new Error('Username already taken');
       }
+
+      // Create auth user
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username }
+        }
+      });
+
+      if (error) throw error;
+      if (!data.user) throw new Error('Failed to create user');
+
+      // Create profile using the auth user's ID
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          username,
+          email,
+          created_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
+        });
+
+      if (profileError) throw profileError;
+
+      // Set user in store
+      setUser({
+        id: data.user.id,
+        email: data.user.email!,
+        username
+      });
+
+      toast.success('Welcome to Hostel Bazaar!');
+      navigate('/');
     } catch (error: any) {
-      toast.error(error.message);
+      console.error('Registration error:', error);
+      toast.error(error.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -67,38 +74,39 @@ export default function Register() {
   const handleTestUserCreation = async () => {
     setLoading(true);
     try {
-      // First sign up
-      const { user } = await signUp('abhi@gmail.com', 'abhi123');
+      // First try to sign up
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: 'abhi@gmail.com',
+        password: 'abhi123',
+      });
 
-      if (user) {
+      if (signUpError) throw signUpError;
+
+      if (signUpData.user) {
         // Create profile
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert([
-            {
-              id: user.id,
-              username: 'Abhinav',
-              email: user.email,
-            },
-          ]);
+          .insert({
+            id: signUpData.user.id,
+            username: 'Abhinav',
+            email: 'abhi@gmail.com',
+          });
 
         if (profileError) throw profileError;
 
-        // Then sign in
-        const { user: signInUser } = await signIn('abhi@gmail.com', 'abhi123');
+        // Sign in immediately
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: 'abhi@gmail.com',
+          password: 'abhi123',
+        });
 
-        if (signInUser) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', signInUser.id)
-            .single();
+        if (signInError) throw signInError;
 
+        if (signInData.user) {
           setUser({
-            id: signInUser.id,
-            email: signInUser.email!,
-            username: profile.username,
-            avatar_url: profile.avatar_url,
+            id: signInData.user.id,
+            email: signInData.user.email!,
+            username: 'Abhinav',
           });
 
           toast.success('Test user created and logged in!');
