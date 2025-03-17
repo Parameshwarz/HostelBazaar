@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -11,61 +12,53 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setUser = useAuthStore((state) => state.setUser);
+  const { signUp, signIn } = useAuth();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // First check if username is taken
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('username', username)
-        .single();
+      // First sign up
+      const { user } = await signUp(email, password);
 
-      if (existingUser) {
-        throw new Error('Username already taken');
-      }
+      if (user) {
+        // Create profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: user.id,
+              username,
+              email: user.email,
+            },
+          ]);
 
-      // Create auth user
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { username }
+        if (profileError) throw profileError;
+
+        // Then sign in
+        const { user: signInUser } = await signIn(email, password);
+
+        if (signInUser) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', signInUser.id)
+            .single();
+
+          setUser({
+            id: signInUser.id,
+            email: signInUser.email!,
+            username: profile.username,
+            avatar_url: profile.avatar_url,
+          });
+
+          toast.success('Welcome to Hostel Bazaar!');
+          navigate('/');
         }
-      });
-
-      if (error) throw error;
-      if (!data.user) throw new Error('Failed to create user');
-
-      // Create profile using the auth user's ID
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: data.user.id,
-          username,
-          email,
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        });
-
-      if (profileError) throw profileError;
-
-      // Set user in store
-      setUser({
-        id: data.user.id,
-        email: data.user.email!,
-        username
-      });
-
-      toast.success('Welcome to Hostel Bazaar!');
-      navigate('/');
+      }
     } catch (error: any) {
-      console.error('Registration error:', error);
-      toast.error(error.message || 'Registration failed');
+      toast.error(error.message);
     } finally {
       setLoading(false);
     }
