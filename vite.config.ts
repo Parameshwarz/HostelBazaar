@@ -38,7 +38,9 @@ export default defineConfig({
           'date-utils': ['date-fns']
         }
       }
-    }
+    },
+    outDir: 'dist',
+    assetsDir: 'assets',
   },
   server: {
     port: 3000,
