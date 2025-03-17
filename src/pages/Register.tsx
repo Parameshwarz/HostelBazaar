@@ -67,39 +67,38 @@ export default function Register() {
   const handleTestUserCreation = async () => {
     setLoading(true);
     try {
-      // First try to sign up
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: 'abhi@gmail.com',
-        password: 'abhi123',
-      });
+      // First sign up
+      const { user } = await signUp('abhi@gmail.com', 'abhi123');
 
-      if (signUpError) throw signUpError;
-
-      if (signUpData.user) {
+      if (user) {
         // Create profile
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert({
-            id: signUpData.user.id,
-            username: 'Abhinav',
-            email: 'abhi@gmail.com',
-          });
+          .insert([
+            {
+              id: user.id,
+              username: 'Abhinav',
+              email: user.email,
+            },
+          ]);
 
         if (profileError) throw profileError;
 
-        // Sign in immediately
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: 'abhi@gmail.com',
-          password: 'abhi123',
-        });
+        // Then sign in
+        const { user: signInUser } = await signIn('abhi@gmail.com', 'abhi123');
 
-        if (signInError) throw signInError;
+        if (signInUser) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', signInUser.id)
+            .single();
 
-        if (signInData.user) {
           setUser({
-            id: signInData.user.id,
-            email: signInData.user.email!,
-            username: 'Abhinav',
+            id: signInUser.id,
+            email: signInUser.email!,
+            username: profile.username,
+            avatar_url: profile.avatar_url,
           });
 
           toast.success('Test user created and logged in!');
