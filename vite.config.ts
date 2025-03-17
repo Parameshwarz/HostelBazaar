@@ -26,7 +26,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    assetsDir: '',
+    assetsDir: 'assets',
     commonjsOptions: {
       include: [/node_modules/],
       transformMixedEsModules: true

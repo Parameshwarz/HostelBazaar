@@ -109,6 +109,7 @@ export const Messages = () => {
   const [showTrustScore, setShowTrustScore] = useState(false);
   const [showDealProgress, setShowDealProgress] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Add message validation constants
   const MIN_MESSAGE_LENGTH = 2;
@@ -132,22 +133,8 @@ export const Messages = () => {
       navigate('/login');
       return;
     }
-
-    const checkSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error || !session) {
-        navigate('/login');
-      }
-    };
-
-    checkSession();
+    setAuthLoading(false);
   }, [user, navigate]);
-
-  useEffect(() => {
-    if (chatId) {
-      setActiveChat(chatId);
-    }
-  }, [chatId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -179,6 +166,12 @@ export const Messages = () => {
       subscription.unsubscribe();
     };
   }, [user, authLoading]);
+
+  useEffect(() => {
+    if (chatId) {
+      setActiveChat(chatId);
+    }
+  }, [chatId]);
 
   useEffect(() => {
     if (!user || !activeChat) return;
