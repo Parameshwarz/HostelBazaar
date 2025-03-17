@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingBag, ArrowRight, Sparkles, Tag, Zap, Trophy, Star, Search, Filter, TrendingUp, Gift } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import FeaturedProducts from '../components/merch/FeaturedProducts';
 import TrendingProducts from '../components/merch/TrendingProducts';
 import CampusCollections from '../components/merch/collections/CampusCollections';

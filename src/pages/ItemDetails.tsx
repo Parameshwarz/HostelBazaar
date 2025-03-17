@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { Item } from '../types';
 import { MessageCircle, Heart, Share2, Clock, Tag, CircleDollarSign, User, MapPin } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';

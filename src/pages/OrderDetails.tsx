@@ -19,7 +19,7 @@ import {
   Download,
   Send
 } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'react-hot-toast';
 

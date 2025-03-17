@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { toast } from 'react-hot-toast';
 import { CartItem, CartHook } from '../types/cart';

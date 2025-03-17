@@ -68,7 +68,7 @@ import EnhancedSearch from '../components/trade/EnhancedSearch';
 import SmartFeatures from '../components/trade/SmartFeatures';
 import { Tilt } from 'react-tilt';
 import { useInView } from 'react-intersection-observer';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import ItemCardSkeleton from '../components/skeletons/ItemCardSkeleton';
 import SellerCardSkeleton from '../components/skeletons/SellerCardSkeleton';
 import ErrorBoundary from '../components/ErrorBoundary';

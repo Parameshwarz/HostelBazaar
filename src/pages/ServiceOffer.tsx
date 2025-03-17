@@ -14,7 +14,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { useServiceCategories } from '../hooks/useServiceCategories';
 import { ServiceLevel, Service } from '../types/services';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 
 interface FormData {
   title: string;

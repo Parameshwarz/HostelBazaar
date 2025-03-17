@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { User2, LayoutDashboard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useServiceCategories } from '../hooks/useServiceCategories';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 
 interface FormData {

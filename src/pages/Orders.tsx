@@ -12,7 +12,7 @@ import {
   MessageSquare,
   Star,
 } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 
 interface Order {

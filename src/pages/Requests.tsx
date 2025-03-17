@@ -28,7 +28,7 @@ import RequestCard from '../components/requests/RequestCard';
 import RequestDetail from '../components/requests/RequestDetail';
 import type { RequestItem, RequestFilters, UrgencyLevel, RequestStatus, TradingItem } from '../types/trade';
 import { Helmet } from 'react-helmet';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 
 const ITEMS_PER_PAGE = 12;

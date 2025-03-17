@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.tsx';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import type { Chat, Message, MessageReaction, MessageSender, DatabaseMessage, DatabaseMessageReaction } from '../types';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';

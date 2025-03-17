@@ -12,7 +12,7 @@ import {
   ChevronRight,
   MapPin
 } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { Product } from '../types/merch';
 import { useAuthStore } from '../store/authStore';

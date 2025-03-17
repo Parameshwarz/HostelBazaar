@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { Item } from '../types';
 import { calculateSimilarity } from '../utils/searchUtils';
 import { useAuthStore } from '../store/authStore';

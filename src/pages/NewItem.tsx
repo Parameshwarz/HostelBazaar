@@ -9,7 +9,7 @@ import PricingCondition from '../components/item-upload/PricingCondition';
 import ImageUpload from '../components/item-upload/ImageUpload';
 import HostelAddress from '../components/item-upload/HostelAddress';
 import ItemSummary from '../components/item-upload/ItemSummary';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'react-hot-toast';
 import { nanoid } from 'nanoid';

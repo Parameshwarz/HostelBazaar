@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 type Props = {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../lib/supabase';
 import ItemCard from '../components/ItemCard';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
