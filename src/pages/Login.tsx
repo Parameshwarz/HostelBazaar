@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -10,29 +11,25 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setUser = useAuthStore((state) => state.setUser);
+  const { signIn } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { user } = await signIn(email, password);
 
-      if (error) throw error;
-
-      if (data.user) {
+      if (user) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', data.user.id)
+          .eq('id', user.id)
           .single();
 
         setUser({
-          id: data.user.id,
-          email: data.user.email!,
+          id: user.id,
+          email: user.email!,
           username: profile.username,
           avatar_url: profile.avatar_url,
         });
