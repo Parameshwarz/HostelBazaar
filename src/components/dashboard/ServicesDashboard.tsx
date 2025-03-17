@@ -20,6 +20,7 @@ import {
   Legend,
   ArcElement
 } from 'chart.js';
+import { useAuth } from '../../hooks/useAuth';
 
 ChartJS.register(
   CategoryScale,
@@ -73,6 +74,7 @@ interface CategoryData {
 }
 
 export default function ServicesDashboard() {
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [loading, setLoading] = useState(true);

@@ -20,7 +20,7 @@ import {
   Paperclip
 } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext.tsx';
+import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import type { Chat, Message, MessageReaction, MessageSender, DatabaseMessage, DatabaseMessageReaction } from '../types';
 import { toast } from 'react-hot-toast';
@@ -72,7 +72,7 @@ export const Messages = () => {
   const [activeChat, setActiveChat] = useState<string | null>(chatId || null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
