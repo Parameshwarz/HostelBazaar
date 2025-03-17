@@ -1,0 +1,7 @@
+-- Add missing fields to profiles table
+ALTER TABLE profiles
+ADD COLUMN IF NOT EXISTS bio TEXT,
+ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS rating DECIMAL(2,1) DEFAULT 0.0,
+ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS member_since TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()); 

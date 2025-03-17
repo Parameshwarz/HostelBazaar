@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Check, ArrowLeft, ArrowRight } from 'lucide-react';
@@ -9,105 +9,149 @@ import PricingCondition from '../components/item-upload/PricingCondition';
 import ImageUpload from '../components/item-upload/ImageUpload';
 import HostelAddress from '../components/item-upload/HostelAddress';
 import ItemSummary from '../components/item-upload/ItemSummary';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
 import { useAuthStore } from '../store/authStore';
+import { toast } from 'react-hot-toast';
+import { nanoid } from 'nanoid';
+import { Subcategory } from '../types';
+
+// Define component Props types
+type StepProps = {
+  data: ItemFormData;
+  onUpdate: (data: Partial<ItemFormData>) => void;
+  onSubmit?: () => void;
+  isUploading?: boolean;
+};
 
 export type ItemFormData = {
   title: string;
   description: string;
-  category: string;
-  subcategory: string;
   price: number;
+  condition: string;
   isNegotiable: boolean;
-  condition: 'New' | 'Like New' | 'Used';
+  isAnonymous?: boolean;
   images: File[];
-  hostelName: string;
-  roomNumber: string;
+  category: string;
+  category_id?: string;
+  subcategory: string;
+  subcategory_id?: string;
+  item_type: 'sell' | 'rent' | 'donate';
+  urgency?: 'urgent' | 'moderate' | 'flexible';
 };
 
 const steps = [
-  { id: 1, title: 'Basic Details' },
-  { id: 2, title: 'Category' },
-  { id: 3, title: 'Pricing' },
-  { id: 4, title: 'Images' },
-  { id: 5, title: 'Location' },
-  { id: 6, title: 'Review' },
+  {
+    id: 1,
+    title: 'Basic Details',
+    component: BasicDetails as React.ComponentType<StepProps>
+  },
+  {
+    id: 2,
+    title: 'Category',
+    component: CategorySelection as React.ComponentType<StepProps>
+  },
+  {
+    id: 3,
+    title: 'Images',
+    component: ImageUpload as React.ComponentType<StepProps>
+  },
+  {
+    id: 4,
+    title: 'Pricing & Condition',
+    component: PricingCondition as React.ComponentType<StepProps>
+  },
+  {
+    id: 5,
+    title: 'Review',
+    component: ItemSummary as React.ComponentType<StepProps>
+  }
 ];
 
 export default function NewItem() {
   const navigate = useNavigate();
   const { categories } = useCategories();
+  const { user } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [formData, setFormData] = useState<ItemFormData>({
     title: '',
     description: '',
+    price: 0,
+    condition: 'Used',
+    isNegotiable: false,
+    images: [],
     category: '',
     subcategory: '',
-    price: 0,
-    isNegotiable: false,
-    condition: 'Used',
-    images: [],
-    hostelName: '',
-    roomNumber: '',
+    isAnonymous: false,
+    item_type: 'sell',
+    urgency: 'moderate'
   });
+
+  // Check if user is authenticated
+  useEffect(() => {
+    const currentUser = user;
+    if (!currentUser) {
+      const currentPath = window.location.pathname + window.location.search;
+      navigate(`/login?redirect=${encodeURIComponent(currentPath)}`);
+      return;
+    }
+  }, [user, navigate]);
+
+  // Load subcategories when category is selected
+  useEffect(() => {
+    if (!formData.category) {
+      setSubcategories([]);
+      return;
+    }
+
+    const loadSubcategories = async () => {
+      const selectedCategory = categories?.find(c => c.slug === formData.category);
+      if (!selectedCategory) return;
+
+      const { data, error } = await supabase
+        .from('subcategories')
+        .select('*')
+        .eq('category_id', selectedCategory.id);
+      
+      if (error) {
+        console.error('Error loading subcategories:', error);
+        return;
+      }
+      
+      setSubcategories(data || []);
+    };
+
+    loadSubcategories();
+  }, [formData.category, categories]);
 
   const updateFormData = (data: Partial<ItemFormData>) => {
     setFormData(prev => ({ ...prev, ...data }));
   };
 
   const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <BasicDetails
-            data={formData}
-            onUpdate={updateFormData}
-          />
-        );
-      case 2:
-        return (
-          <CategorySelection
-            data={formData}
-            onUpdate={updateFormData}
-          />
-        );
-      case 3:
-        return (
-          <PricingCondition
-            data={formData}
-            onUpdate={updateFormData}
-          />
-        );
-      case 4:
-        return (
-          <ImageUpload
-            data={formData}
-            onUpdate={updateFormData}
-          />
-        );
-      case 5:
-        return (
-          <HostelAddress
-            data={formData}
-            onUpdate={updateFormData}
-          />
-        );
-      case 6:
-        return (
-          <ItemSummary
-            data={formData}
-            onSubmit={handleSubmit}
-            isUploading={isUploading}
-          />
-        );
-    }
+    const step = steps.find(s => s.id === currentStep);
+    if (!step) return null;
+
+    const Component = step.component;
+    return (
+      <Component
+        data={formData}
+        onUpdate={updateFormData}
+        onSubmit={step.id === steps.length ? handleSubmit : undefined}
+        isUploading={step.id === steps.length ? isUploading : undefined}
+      />
+    );
   };
 
   const uploadImage = async (file: File, retries = 3): Promise<string> => {
     try {
-      const { user } = useAuthStore.getState();
-      const fileName = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const currentUser = useAuthStore.getState().user;
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
+      
+      const fileName = `${currentUser.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       
       const { error: uploadError } = await supabase.storage
         .from('item-images')
@@ -134,40 +178,77 @@ export default function NewItem() {
 
   const handleSubmit = async () => {
     try {
-      const { user } = useAuthStore.getState();
-      if (!user) throw new Error('You must be logged in to post an item');
-
       setIsUploading(true);
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        const currentPath = window.location.pathname + window.location.search;
+        navigate(`/login?redirect=${encodeURIComponent(currentPath)}`);
+        return;
+      }
 
       // Upload images first
       const imageUrls = await Promise.all(
         formData.images.map(file => uploadImage(file))
       );
 
-      // Create the item
-      const { error: itemError } = await supabase
-        .from('items')
-        .insert({
-          title: formData.title,
-          description: formData.description,
-          price: formData.price,
-          condition: formData.condition,
-          category_id: categories?.find(c => c.slug === formData.category)?.id,
-          subcategory_id: categories?.find(c => c.slug === formData.category)?.subcategories.find(s => s.slug === formData.subcategory)?.id,
-          images: imageUrls,
-          uploader_id: user.id,
-          hostel_name: formData.hostelName,
-          room_number: formData.roomNumber,
-          is_negotiable: formData.isNegotiable
-        });
+      // Check if this is a request or regular item
+      const isRequest = new URLSearchParams(window.location.search).get('type') === 'request';
+      
+      if (isRequest) {
+        // Create a request item
+        const { error } = await supabase
+          .from('requested_items')
+          .insert({
+            title: formData.title,
+            description: formData.description,
+            min_budget: formData.price,
+            max_budget: formData.price * 1.2, // 20% above the target price as max budget
+            images: imageUrls,
+            category_id: formData.category_id,
+            subcategory_id: formData.subcategory_id,
+            user_id: currentUser.id,
+            created_at: new Date().toISOString(),
+            urgency: formData.urgency || 'moderate',
+            status: 'active',
+            is_flexible: formData.isNegotiable,
+            is_anonymous: formData.isAnonymous,
+            specifications: {
+              condition: formData.condition,
+              listing_type: formData.item_type
+            }
+          });
 
-      if (itemError) throw itemError;
+        if (error) throw error;
+        
+        navigate('/requests');
+        toast.success('Request posted successfully!');
+      } else {
+        // Create a regular item
+        const { error } = await supabase
+          .from('items')
+          .insert({
+            title: formData.title,
+            description: formData.description,
+            price: formData.price,
+            condition: formData.condition,
+            images: imageUrls,
+            category_id: formData.category_id,
+            subcategory_id: formData.subcategory_id,
+            user_id: currentUser.id,
+            created_at: new Date().toISOString(),
+            is_anonymous: formData.isAnonymous,
+            item_type: formData.item_type
+          });
 
-      // Success! Navigate to browse page
-      navigate('/browse');
+        if (error) throw error;
+        
+        navigate('/');
+        toast.success('Item listed successfully!');
+      }
     } catch (error) {
-      console.error('Error:', error);
-      alert('Failed to create item. Please try again.');
+      console.error('Error creating item:', error);
+      toast.error('Failed to create listing');
     } finally {
       setIsUploading(false);
     }

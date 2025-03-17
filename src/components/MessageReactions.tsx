@@ -1,91 +1,123 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../store/authStore';
+import { Smile, Search } from 'lucide-react';
 
-interface MessageReactionsProps {
-  reactions: any[];
-  isOwn: boolean;
-  onReact: (messageId: string, emoji: string) => void;
+interface Props {
+  onReact: (emoji: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-const EMOJI_OPTIONS = ['❤️', '👍', '😂', '😢', '😮'];
+const EMOJI_CATEGORIES = {
+  recent: {
+    name: 'Recently Used',
+    emojis: ['👍', '❤️', '😊', '👏', '🎉', '🔥']
+  },
+  common: {
+    name: 'Common',
+    emojis: ['👍', '👎', '❤️', '😊', '😂', '😍', '🎉', '👏', '🔥', '💯', '✨', '🙌']
+  },
+  faces: {
+    name: 'Faces',
+    emojis: ['😊', '😂', '🤣', '😍', '🥰', '😘', '😅', '😉', '🙂', '🤔', '🤨', '😐']
+  },
+  gestures: {
+    name: 'Gestures',
+    emojis: ['👍', '👎', '👌', '✌️', '🤞', '🤝', '👊', '🤜', '🤛', '👋', '🙌', '👏']
+  }
+};
 
-export const MessageReactions = ({ reactions, onReact, isOwn }: MessageReactionsProps) => {
-  const [showPicker, setShowPicker] = useState(false);
-  const user = useAuthStore((state) => state.user);
-  if (!user) return null;
+export const MessageReactions: React.FC<Props> = ({
+  onReact,
+  isOpen,
+  onClose
+}) => {
+  const [selectedCategory, setSelectedCategory] = useState<keyof typeof EMOJI_CATEGORIES>('recent');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Group reactions by emoji and count them
-  const reactionGroups = reactions.reduce((acc, reaction) => {
-    acc[reaction.emoji] = {
-      count: (acc[reaction.emoji]?.count || 0) + 1,
-      users: [...(acc[reaction.emoji]?.users || []), reaction.username]
-    };
-    return acc;
-  }, {} as Record<string, { count: number; users: string[] }>);
-
-  // Find user's current reaction if any
-  const userReaction = reactions.find(r => r.user_id === user.id);
+  const filteredEmojis = searchQuery
+    ? Object.values(EMOJI_CATEGORIES)
+        .flatMap(category => category.emojis)
+        .filter((emoji, index, self) => self.indexOf(emoji) === index) // Remove duplicates
+        .filter(emoji => emoji.includes(searchQuery))
+    : EMOJI_CATEGORIES[selectedCategory].emojis;
 
   return (
-    <div className="relative group">
-      <div className={`flex -space-x-1 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-        {Object.entries(reactionGroups).map(([emoji, { count, users }]) => {
-          const isUserReaction = userReaction?.emoji === emoji;
-          
-          return (
-            <motion.button
-              key={emoji}
-              onClick={() => onReact(emoji)}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className={`inline-flex items-center px-2 py-1 text-xs rounded-full hover:bg-gray-100 transition-colors ${
-                isUserReaction 
-                  ? 'bg-indigo-100 text-indigo-600'
-                  : 'bg-gray-100'
-              }`}
-              title={`${emoji} - ${users.join(', ')} (${count})`}
-            >
-              {emoji}
-            </motion.button>
-          );
-        })}
-      </div>
-
-      {/* Emoji Button */}
-      <button
-        onClick={() => setShowPicker(!showPicker)}
-        className={`absolute ${isOwn ? 'left-0' : 'right-0'} bottom-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-full hover:bg-gray-100`}
-      >
-        <span className="text-gray-500 text-sm">😊</span>
-      </button>
-
-      {/* Emoji Picker Popup */}
-      <AnimatePresence>
-        {showPicker && (
+    <AnimatePresence>
+      {isOpen && (
+        <>
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className={`absolute bottom-8 ${isOwn ? 'left-0' : 'right-0'} bg-white shadow-lg rounded-lg p-2 z-50`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+            onClick={onClose}
+          />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-0 bottom-full mb-2 bg-white rounded-xl shadow-xl p-3 min-w-[280px] z-50 border border-gray-200/50"
           >
-            <div className="flex gap-2">
-              {EMOJI_OPTIONS.map((emoji) => (
-                <button
+            {/* Search Bar */}
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search emojis..."
+                className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+            </div>
+
+            {!searchQuery && (
+              <div className="flex gap-1 mb-2 pb-2 border-b border-gray-100 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+                {Object.entries(EMOJI_CATEGORIES).map(([key, category]) => (
+                  <motion.button
+                    key={key}
+                    onClick={() => setSelectedCategory(key as keyof typeof EMOJI_CATEGORIES)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-colors ${
+                      selectedCategory === key
+                        ? 'bg-indigo-100 text-indigo-600 font-medium'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {category.name}
+                  </motion.button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-6 gap-1.5 max-h-[200px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent pr-1">
+              {filteredEmojis.map((emoji) => (
+                <motion.button
                   key={emoji}
                   onClick={() => {
                     onReact(emoji);
-                    setShowPicker(false);
+                    onClose();
                   }}
-                  className="hover:bg-gray-100 p-1 rounded transition-colors"
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-xl flex items-center justify-center"
                 >
                   {emoji}
-                </button>
+                </motion.button>
               ))}
             </div>
+
+            {filteredEmojis.length === 0 && (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No emojis found
+              </div>
+            )}
           </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+        </>
+      )}
+    </AnimatePresence>
   );
 };

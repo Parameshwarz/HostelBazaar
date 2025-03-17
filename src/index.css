@@ -1,3 +1,90 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background-primary: theme('colors.gray.50');
+    --text-primary: theme('colors.gray.900');
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background-primary: theme('colors.dark.bg.primary');
+    --text-primary: theme('colors.dark.text.primary');
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-[var(--background-primary)] text-[var(--text-primary)];
+  }
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition-property: color, background-color, border-color;
+  transition-duration: 300ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Disable transitions on page load */
+.preload * {
+  transition: none !important;
+}
+
+/* Add reply highlight animation */
+@keyframes reply-highlight {
+  0% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+  100% {
+    background-color: rgba(59, 130, 246, 0);
+  }
+}
+
+.reply-highlight {
+  animation: reply-highlight 0.5s ease-in-out;
+}
+
+.highlight-message {
+  animation: highlight-pulse 2s ease-out;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    background-color: rgba(99, 102, 241, 0.2);
+  }
+  50% {
+    background-color: rgba(99, 102, 241, 0.1);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Add a transition for smoother highlighting */
+.message-bubble {
+  transition: background-color 0.3s ease;
+}
+
+/* Add these styles to ensure footer stays at bottom */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1;
+}
+
+footer {
+  margin-top: auto;
+}

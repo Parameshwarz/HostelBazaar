@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sliders, 
-  Search, 
   ArrowUpDown,
   SortAsc,
   SortDesc,
@@ -12,56 +11,317 @@ import {
   ChevronDown,
   Tag,
   CircleDollarSign,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ArrowDownUp,
+  TrendingDown,
+  TrendingUp,
+  Loader,
+  X,
+  Menu
 } from 'lucide-react';
-import { useItems } from '../hooks/useItems';
 import { useCategories } from '../hooks/useCategories';
 import ItemCard from '../components/ItemCard';
 import { toast } from 'react-hot-toast';
+import { searchAllContent } from '../lib/supabase/queries';
+import ItemCardSkeleton from '../components/ItemCardSkeleton';
+import { useFilterPersistence } from '../hooks/useFilterPersistence';
+import EnhancedSearch from '../components/trade/EnhancedSearch';
+import { useAuth } from '../hooks/useAuth';
+import { Filters, SearchParams, SortOption, VALID_SORT_VALUES, getSortBy } from '../types/filters';
+import PriceRangeSlider from '../components/trade/PriceRangeSlider';
+import ViewModeToggle, { ViewMode } from '../components/trade/ViewModeToggle';
+import QuickViewModal from '../components/trade/QuickViewModal';
+import FilterSidebar from '../components/FilterSidebar';
+import { ItemsGrid } from '../components/ItemsGrid';
+
+// Constants for pagination
+const ITEMS_PER_PAGE = 12;
+const INFINITE_SCROLL_THRESHOLD = 300;
+
+// Add debounce utility
+const debounce = (func: Function, wait: number) => {
+  let timeout: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  subcategories?: Subcategory[];
+}
+
+interface Subcategory {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface FilterPreset {
+  name: string;
+  filters: Partial<Filters>;
+}
+
+// Add error types
+type ErrorType = 'network' | 'server' | 'timeout' | 'unknown';
+
+interface FetchError {
+  type: ErrorType;
+  message: string;
+  retryCount: number;
+}
+
+// Add type for sort options
+type SortOptionType = {
+  value: SortOption;
+  label: string;
+  icon: any;
+};
+
+const sortOptions: SortOptionType[] = [
+  { value: 'relevance', label: 'Most Relevant', icon: ArrowUpDown },
+  { value: 'created_at_desc', label: 'Latest First', icon: Clock },
+  { value: 'price_asc', label: 'Price: Low to High', icon: TrendingUp },
+  { value: 'price_desc', label: 'Price: High to Low', icon: TrendingDown }
+];
 
 export default function Browse() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState({
-    category: searchParams.get('category') || '',
-    subcategory: searchParams.get('subcategory') || '',
+  const location = useLocation();
+  const { categories } = useCategories();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const searchRef = useRef<HTMLDivElement>(null);
+  
+  const initialFilters: Filters = {
+    categories: searchParams.getAll('category'),
+    subcategories: searchParams.getAll('subcategory'),
+    conditions: searchParams.getAll('condition'),
     minPrice: searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined,
     maxPrice: searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
-    condition: searchParams.get('condition') || '',
     search: searchParams.get('search') || '',
-    sortBy: (searchParams.get('sortBy') as 'price_asc' | 'price_desc' | 'created_at_desc') || 'created_at_desc'
-  });
+    sortBy: getSortBy(searchParams.get('sortBy')),
+    showWishlisted: false
+  };
 
-  const { items, isLoading, error } = useItems(filters);
-  const { categories } = useCategories();
+  const { filters, setFilters } = useFilterPersistence(initialFilters);
+  
+  // State
+  const [isSearching, setIsSearching] = useState(false);
+  const [items, setItems] = useState<any[]>([]);
+  const [error, setError] = useState<any>(null);
+  const [hasExactMatches, setHasExactMatches] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const lastElementRef = useRef<HTMLDivElement>(null);
+  const observer = useRef<IntersectionObserver>();
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [fetchError, setFetchError] = useState<FetchError | null>(null);
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 2000;
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  const [isSortOpen, setIsSortOpen] = useState(false);
 
-  const handleFilterChange = (newFilters: Partial<typeof filters>) => {
-    const updatedFilters = { ...filters, ...newFilters };
-    setFilters(updatedFilters);
+  // Modified infinite scroll implementation
+  const lastItemRef = useCallback((node: HTMLDivElement) => {
+    if (isSearching || !hasMore) return;
     
-    // Update URL params
+    // Cleanup previous observer
+    if (observer.current) observer.current.disconnect();
+
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+        setPage(prevPage => prevPage + 1);
+      }
+    }, { 
+      rootMargin: '100px', // Load earlier for smoother experience
+      threshold: 0.1 
+    });
+
+    if (node) observer.current.observe(node);
+  }, [isSearching, hasMore, isLoadingMore]);
+
+  // Add cleanup
+  useEffect(() => {
+    return () => {
+      if (observer.current) {
+        observer.current.disconnect();
+      }
+    };
+  }, []);
+
+  // Add scroll position restoration
+  useEffect(() => {
+    const scrollPosition = sessionStorage.getItem('browseScrollPosition');
+    if (scrollPosition) {
+      window.scrollTo(0, parseInt(scrollPosition));
+      sessionStorage.removeItem('browseScrollPosition');
+    }
+  }, []);
+
+  // Save scroll position before navigation
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      sessionStorage.setItem('browseScrollPosition', window.scrollY.toString());
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // Add click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        // Find the EnhancedSearch component and call its setShowSuggestions
+        const searchInput = searchRef.current.querySelector('input');
+        if (searchInput) {
+          searchInput.blur();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Enhanced fetch items function
+  const fetchItems = async (retryCount = 0) => {
+    setIsSearching(true);
+    try {
+      const searchParams: SearchParams = {
+        categories: filters.categories,
+        conditions: filters.conditions,
+        minPrice: filters.minPrice,
+        maxPrice: filters.maxPrice,
+        sortBy: filters.sortBy,
+        page,
+        limit: ITEMS_PER_PAGE
+      };
+
+      const results = await searchAllContent(filters.search, searchParams, user?.id);
+
+      if (page === 1) {
+        setItems(results.items);
+      } else {
+        setItems(prevItems => [...prevItems, ...results.items]);
+      }
+
+      setHasExactMatches(results.hasExactMatches);
+      setHasMore(results.items.length === ITEMS_PER_PAGE);
+      setFetchError(null);
+
+      if (results.type === 'no_results' && page === 1) {
+        toast.error('No items found matching your criteria');
+      }
+    } catch (err: any) {
+      console.error('Error fetching items:', err);
+      
+      // Determine error type
+      let errorType: ErrorType = 'unknown';
+      if (!navigator.onLine) errorType = 'network';
+      else if (err.message?.includes('timeout')) errorType = 'timeout';
+      else if (err.status >= 500) errorType = 'server';
+
+      const error: FetchError = {
+        type: errorType,
+        message: getErrorMessage(errorType),
+        retryCount
+      };
+      
+      setFetchError(error);
+
+      // Retry logic for specific error types
+      if (retryCount < MAX_RETRIES && (errorType === 'network' || errorType === 'timeout')) {
+        setTimeout(() => {
+          fetchItems(retryCount + 1);
+        }, RETRY_DELAY * (retryCount + 1));
+        
+        toast.error(`Retrying... Attempt ${retryCount + 1} of ${MAX_RETRIES}`);
+      } else {
+        if (page === 1) setItems([]);
+        toast.error(error.message);
+      }
+    } finally {
+      setIsSearching(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Error message helper
+  const getErrorMessage = (type: ErrorType): string => {
+    switch (type) {
+      case 'network':
+        return 'Network connection lost. Please check your internet connection.';
+      case 'server':
+        return 'Server error. Our team has been notified.';
+      case 'timeout':
+        return 'Request timed out. Please try again.';
+      default:
+        return 'An unexpected error occurred. Please try again later.';
+    }
+  };
+
+  // Add error UI component
+  const ErrorMessage = ({ error }: { error: FetchError }) => (
+    <div className="w-full p-4 bg-red-50 rounded-lg text-red-700 mb-4">
+      <p className="font-medium">{error.message}</p>
+      {(error.type === 'network' || error.type === 'timeout') && error.retryCount < MAX_RETRIES && (
+        <p className="text-sm mt-1">Retrying automatically...</p>
+      )}
+    </div>
+  );
+
+  // Modified fetch items function
+  useEffect(() => {
+    fetchItems();
+  }, [filters, page, user?.id]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+    setHasMore(true);
+  }, [filters.search, filters.categories, filters.subcategories, filters.conditions, filters.minPrice, filters.maxPrice, filters.sortBy]);
+
+  // Update URL when filters change
+  useEffect(() => {
     const params = new URLSearchParams();
-    Object.entries(updatedFilters).forEach(([key, value]) => {
-      if (value) params.set(key, String(value));
-    });
+    
+    if (filters.categories.length) {
+      filters.categories.forEach(cat => params.append('category', cat));
+    }
+    
+    if (filters.subcategories.length) {
+      filters.subcategories.forEach(sub => params.append('subcategory', sub));
+    }
+    
+    if (filters.conditions.length) {
+      filters.conditions.forEach(cond => params.append('condition', cond));
+    }
+    
+    if (filters.minPrice !== undefined) {
+      params.set('minPrice', filters.minPrice.toString());
+    }
+    
+    if (filters.maxPrice !== undefined) {
+      params.set('maxPrice', filters.maxPrice.toString());
+    }
+    
+    if (filters.search) {
+      params.set('search', filters.search);
+    }
+    
+    if (filters.sortBy) {
+      params.set('sortBy', filters.sortBy);
+    }
+    
     setSearchParams(params);
-  };
-
-  const handleApplyFilters = () => {
-    toast.success('Filters applied');
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      category: '',
-      subcategory: '',
-      minPrice: undefined,
-      maxPrice: undefined,
-      condition: '',
-      search: '',
-      sortBy: 'created_at_desc'
-    });
-    setSearchParams(new URLSearchParams());
-  };
+  }, [filters, setSearchParams]);
 
   const inputClassName = `
     w-full 
@@ -78,183 +338,451 @@ export default function Browse() {
     focus:shadow-[0_0_4px_rgba(74,144,226,0.4)]
   `;
 
+  // Get total active filters count
+  const getActiveFiltersCount = () => {
+    return filters.categories.length + 
+           filters.subcategories.length + 
+           filters.conditions.length + 
+           (filters.minPrice ? 1 : 0) + 
+           (filters.maxPrice ? 1 : 0) + 
+           (filters.search ? 1 : 0);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (newFilters: Partial<Filters>) => {
+    setFilters(prev => ({ ...prev, ...newFilters }));
+  };
+
+  // Handle clear filters
+  const handleClearFilters = () => {
+    setFilters({
+      categories: [],
+      subcategories: [],
+      conditions: [],
+      minPrice: undefined,
+      maxPrice: undefined,
+      search: '',
+      sortBy: 'relevance',
+      showWishlisted: false
+    });
+    setPage(1);
+    setItems([]);
+    
+    // Clear search input if it exists
+    const searchInput = document.querySelector('input[name="search"]') as HTMLInputElement;
+    if (searchInput) {
+      searchInput.value = '';
+    }
+  };
+
+  // Debounced search handler
+  const debouncedSearch = debounce((value: string) => {
+    handleFilterChange({ search: value });
+  }, 500);
+
+  // Enhanced search handler
+  const handleSearch = useCallback((searchQuery: string) => {
+    // Update filters with the search query
+    handleFilterChange({ search: searchQuery });
+  }, []);
+
+  // Add input change handler for debounced search
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    debouncedSearch(e.target.value);
+  };
+
+  // Update condition filter
+  const handleConditionChange = (condition: string) => {
+    handleFilterChange({ conditions: [condition] });
+  };
+
+  // Update price range
+  const handlePriceChange = (min?: number, max?: number) => {
+    handleFilterChange({ 
+      minPrice: min,
+      maxPrice: max 
+    });
+  };
+
+  // Sort handler
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as SortOption;
+    if (VALID_SORT_VALUES.includes(value)) {
+      handleFilterChange({ sortBy: value });
+    }
+  };
+
+  // Filter presets with proper typing
+  const filterPresets: FilterPreset[] = [
+    {
+      name: "Study Materials",
+      filters: {
+        categories: ['books-and-stationery'],
+        conditions: ['Like New', 'Used'],
+        sortBy: 'price_asc'
+      }
+    },
+    {
+      name: "Electronics Deals",
+      filters: {
+        categories: ['electronics'],
+        maxPrice: 15000,
+        sortBy: 'price_asc'
+      }
+    },
+    {
+      name: "Room Essentials",
+      filters: {
+        categories: ['room-essentials'],
+        conditions: ['New', 'Like New'],
+        sortBy: 'created_at_desc'
+      }
+    }
+  ];
+
+  // Apply filter preset
+  const applyPreset = (preset: FilterPreset) => {
+    handleFilterChange(preset.filters);
+  };
+
+  const handleImageSearch = useCallback(async (file: File) => {
+    // TODO: Implement image search functionality
+    toast.error('Image search coming soon!');
+  }, []);
+
+  const handleQuickView = (item: any) => {
+    setSelectedItem(item);
+  };
+
+  const handleCloseQuickView = () => {
+    setSelectedItem(null);
+  };
+
+  const handleContact = (item: any) => {
+    if (!user) {
+      toast.error('Please sign in to contact the seller');
+      return;
+    }
+    
+    if (item.user_id === user.id) {
+      toast.error("This is your own item!");
+      return;
+    }
+
+    // Navigate to chat with the seller
+    navigate(`/chat/${item.user_id}?item=${item.id}`);
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC key closes mobile filters
+      if (e.key === 'Escape' && isMobileFiltersOpen) {
+        setIsMobileFiltersOpen(false);
+      }
+
+      // Arrow keys for navigating items
+      if (document.activeElement?.tagName === 'BODY') {
+        const itemElements = document.querySelectorAll('[data-item-card]');
+        const currentIndex = Array.from(itemElements).findIndex(el => el === document.activeElement);
+
+        if (e.key === 'ArrowRight' && currentIndex < itemElements.length - 1) {
+          (itemElements[currentIndex + 1] as HTMLElement).focus();
+        } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+          (itemElements[currentIndex - 1] as HTMLElement).focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileFiltersOpen]);
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Filters Section */}
-      <div className="bg-white border border-[#E0E0E0] rounded-[10px] shadow-[0px_2px_6px_rgba(0,0,0,0.1)] p-6 mb-5">
-        {/* Header */}
-        <div className="flex items-center gap-3 pb-4 border-b border-gray-100 mb-6">
-          <Filter className="w-5 h-5 text-gray-500" />
-          <h2 className="text-lg font-medium text-gray-800">Filters</h2>
-        </div>
-
-        {/* Filters Grid - Updated spacing and alignment */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {/* Each filter item gets consistent spacing */}
-          <div className="flex flex-col gap-3">
-            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-              <Tag className="w-4 h-4 text-gray-500" />
-              Category
-            </label>
-            <div className="relative">
-              <select
-                value={filters.category}
-                onChange={(e) => handleFilterChange({ category: e.target.value })}
-                className={`${inputClassName} appearance-none`}
-                aria-label="Filter by category"
-                id="category-filter"
-              >
-                <option value="">All Categories</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+    <div className="min-h-screen bg-gray-50">
+      {/* Hero Section with Search */}
+      <div className="w-full bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-b border-gray-200">
+        <div className="w-full max-w-[1800px] mx-auto px-3 md:px-6 lg:px-8 py-8 md:py-12">
+          <div className="max-w-3xl mx-auto">
+            {/* Page Header */}
+            <div className="text-center mb-6">
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Browse Items</h1>
+              <p className="text-lg text-gray-600">Find what you need from our marketplace</p>
             </div>
-          </div>
 
-          {filters.category && (
-            <div className="flex flex-col gap-3">
-              <label className="block text-sm font-medium text-gray-700">Subcategory</label>
-              <select
-                value={filters.subcategory}
-                onChange={(e) => handleFilterChange({ subcategory: e.target.value })}
-                className={inputClassName}
-              >
-                <option value="">All Subcategories</option>
-                {categories
-                  .find(c => c.id === filters.category)
-                  ?.subcategories?.map((sub) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3">
-            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-              <SlidersHorizontal className="w-4 h-4 text-gray-500" />
-              Condition
-            </label>
-            <div className="relative">
-              <select
-                value={filters.condition}
-                onChange={(e) => handleFilterChange({ condition: e.target.value as typeof filters.condition })}
-                className={`${inputClassName} appearance-none`}
-                aria-label="Filter by condition"
-                id="condition-filter"
-              >
-                <option value="">All Conditions</option>
-                <option value="new">New</option>
-                <option value="like_new">Like New</option>
-                <option value="used">Used</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4 text-gray-500" />
-              Sort By
-            </label>
-            <div className="relative">
-              <select
-                value={filters.sortBy}
-                onChange={(e) => handleFilterChange({ sortBy: e.target.value as typeof filters.sortBy })}
-                className={`${inputClassName} appearance-none`}
-              >
-                <option value="created_at_desc">Latest</option>
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Price Range - now with better spacing */}
-          <div className="flex flex-col gap-3 lg:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-              <CircleDollarSign className="w-4 h-4 text-gray-500" />
-              Price Range
-            </label>
-            <div className="flex gap-4">
-              <input
-                type="number"
-                placeholder="Min Price"
-                value={filters.minPrice || ''}
-                onChange={(e) => handleFilterChange({ minPrice: e.target.value ? Number(e.target.value) : undefined })}
-                className={inputClassName}
-                aria-label="Minimum price"
-                id="min-price"
-              />
-              <input
-                type="number"
-                placeholder="Max Price"
-                value={filters.maxPrice || ''}
-                onChange={(e) => handleFilterChange({ maxPrice: e.target.value ? Number(e.target.value) : undefined })}
-                className={inputClassName}
+            {/* Search Section */}
+            <div className="relative" ref={searchRef}>
+              <EnhancedSearch 
+                onSearch={handleSearch}
+                onImageSearch={handleImageSearch}
+                showHistory={true}
               />
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-4 mt-6 pt-4 border-t border-gray-100">
-          <button
-            onClick={handleClearFilters}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
-            aria-label="Clear all filters"
-          >
-            Clear Filters
-          </button>
-          <button
-            onClick={handleApplyFilters}
-            className="px-6 py-3 bg-[#4A90E2] hover:bg-[#3A7BCD] text-white rounded-[8px] 
-            font-medium text-sm transition-colors focus:outline-none focus:ring-2 
-            focus:ring-[#4A90E2] focus:ring-offset-2 flex items-center gap-2"
-          >
-            <Filter className="w-4 h-4" />
-            Apply Filters
-          </button>
         </div>
       </div>
 
-      {/* Items Grid with improved layout */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-8">
-        {isLoading ? (
-          // Loading skeleton grid
-          <>
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="bg-white rounded-[10px] shadow-[0px_4px_8px_rgba(0,0,0,0.1)] p-3 animate-pulse">
-                <div className="aspect-square w-full bg-gray-200 rounded-lg mb-3" />
-                <div className="space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                  <div className="h-4 bg-gray-200 rounded w-1/4" />
-                  <div className="h-4 bg-gray-200 rounded w-full" />
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
+      {/* Main Content */}
+      <div className="w-full max-w-[1800px] mx-auto px-3 md:px-6 lg:px-8 py-6">
+        {/* Active Filters */}
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4"
+        >
+          {getActiveFiltersCount() > 0 && (
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-sm font-medium text-gray-500">Active Filters:</span>
+                <div className="flex flex-wrap gap-2">
+                  {filters.categories.map(cat => (
+                    <motion.button
+                      key={cat}
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleFilterChange({
+                        categories: filters.categories.filter(c => c !== cat)
+                      })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-50 to-purple-50 
+                        border border-indigo-100 rounded-full text-sm font-medium text-indigo-600 
+                        hover:shadow-md transition-all duration-200"
+                    >
+                      <Tag className="w-3.5 h-3.5" />
+                      {categories.find(c => c.slug === cat)?.name}
+                      <X className="w-3.5 h-3.5" />
+                    </motion.button>
+                  ))}
+                  {filters.conditions.map(condition => (
+                    <motion.button
+                      key={condition}
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleFilterChange({
+                        conditions: filters.conditions.filter(c => c !== condition)
+                      })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-green-50 to-emerald-50 
+                        border border-green-100 rounded-full text-sm font-medium text-green-600 
+                        hover:shadow-md transition-all duration-200"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      {condition}
+                      <X className="w-3.5 h-3.5" />
+                    </motion.button>
+                  ))}
+                  {(filters.minPrice !== undefined || filters.maxPrice !== undefined) && (
+                    <motion.button
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleFilterChange({ minPrice: undefined, maxPrice: undefined })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-sky-50 
+                        border border-blue-100 rounded-full text-sm font-medium text-blue-600 
+                        hover:shadow-md transition-all duration-200"
+                    >
+                      <CircleDollarSign className="w-3.5 h-3.5" />
+                      ₹{filters.minPrice || 0} - ₹{filters.maxPrice || '∞'}
+                      <X className="w-3.5 h-3.5" />
+                    </motion.button>
+                  )}
+                  <motion.button
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: 1 }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleClearFilters}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-red-50 to-rose-50 
+                      border border-red-100 rounded-full text-sm font-medium text-red-600 
+                      hover:shadow-md transition-all duration-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Clear All
+                  </motion.button>
                 </div>
               </div>
-            ))}
-          </>
-        ) : error ? (
-          <div className="col-span-full text-center py-8 text-gray-500">
-            Error loading items
+            </div>
+          )}
+        </motion.div>
+
+        {/* Controls Bar */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 mb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setIsMobileFiltersOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-50 to-gray-100 
+                  hover:from-gray-100 hover:to-gray-200 border border-gray-200 rounded-lg transition-all 
+                  shadow-sm hover:shadow-md lg:hidden"
+                aria-label="Open filters"
+                aria-expanded={isMobileFiltersOpen}
+              >
+                <Filter className="w-4 h-4 text-gray-700" />
+                <span className="font-medium text-gray-700">Filters</span>
+                {getActiveFiltersCount() > 0 && (
+                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full text-xs font-semibold">
+                    {getActiveFiltersCount()}
+                  </span>
+                )}
+              </motion.button>
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setIsSortOpen(!isSortOpen)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-50 to-gray-100 
+                    hover:from-gray-100 hover:to-gray-200 border border-gray-200 rounded-lg transition-all
+                    shadow-sm hover:shadow-md"
+                >
+                  <ArrowUpDown className="w-4 h-4 text-gray-700" />
+                  <span className="font-medium text-gray-700">Sort By</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`} />
+                </motion.button>
+
+                <AnimatePresence>
+                  {isSortOpen && (
+                    <>
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-20 bg-black/5 backdrop-blur-sm"
+                        onClick={() => setIsSortOpen(false)}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute top-full left-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 
+                          overflow-hidden z-30"
+                      >
+                        {sortOptions.map(option => (
+                          <motion.button
+                            key={option.value}
+                            whileHover={{ x: 4 }}
+                            onClick={() => {
+                              handleFilterChange({ sortBy: option.value });
+                              setIsSortOpen(false);
+                            }}
+                            className={`flex items-center gap-2.5 w-full px-4 py-3 text-sm transition-all
+                              ${filters.sortBy === option.value 
+                                ? 'bg-gradient-to-r from-indigo-50 to-indigo-100 text-indigo-700 font-medium' 
+                                : 'hover:bg-gray-50 text-gray-700'}`}
+                          >
+                            <option.icon className="w-4 h-4" />
+                            {option.label}
+                          </motion.button>
+                        ))}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center">
+              <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+            </div>
           </div>
-        ) : items.length === 0 ? (
-          <div className="col-span-full text-center py-8 text-gray-500">
-            No items found
+        </div>
+
+        {/* Main Content */}
+        <div className="flex gap-6">
+          {/* Filters Sidebar - Desktop */}
+          <div className="hidden lg:block sticky top-24 h-[calc(100vh-6rem)] overflow-y-auto pb-6 w-72 flex-shrink-0">
+            <FilterSidebar
+              filters={filters}
+              categories={categories}
+              onFilterChange={handleFilterChange}
+              onClearFilters={handleClearFilters}
+              filterPresets={filterPresets}
+              onApplyPreset={applyPreset}
+            />
           </div>
-        ) : (
-          // Actual items grid
-          items.map((item) => (
-            <ItemCard key={item.id} item={item} />
-          ))
-        )}
+
+          {/* Items Grid */}
+          <div className="flex-1 min-w-0">
+            <ItemsGrid
+              items={items}
+              viewMode={viewMode}
+              isSearching={isSearching}
+              isLoadingMore={isLoadingMore}
+              hasExactMatches={hasExactMatches}
+              fetchError={fetchError}
+              page={page}
+              filters={filters}
+              lastItemRef={lastItemRef}
+              onQuickView={handleQuickView}
+              onContact={handleContact}
+              onClearFilters={handleClearFilters}
+            />
+          </div>
+        </div>
       </div>
+
+      {/* Mobile Filters Modal */}
+      <AnimatePresence>
+        {isMobileFiltersOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 lg:hidden"
+            onClick={() => setIsMobileFiltersOpen(false)}
+          >
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              className="absolute right-0 top-0 h-full w-full max-w-md bg-white overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-white border-b">
+                <h2 className="text-lg font-semibold">Filters</h2>
+                <button
+                  onClick={() => setIsMobileFiltersOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <FilterSidebar
+                  filters={filters}
+                  categories={categories}
+                  onFilterChange={handleFilterChange}
+                  onClearFilters={handleClearFilters}
+                  filterPresets={filterPresets}
+                  onApplyPreset={applyPreset}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {selectedItem && (
+        <QuickViewModal
+          item={selectedItem}
+          onClose={handleCloseQuickView}
+          onWishlist={() => {
+            toast.success('Wishlist feature coming soon!');
+          }}
+          onShare={() => {
+            navigator.clipboard.writeText(window.location.origin + `/items/${selectedItem.id}`);
+            toast.success('Link copied to clipboard!');
+          }}
+          onContact={() => handleContact(selectedItem)}
+        />
+      )}
     </div>
   );
 } 

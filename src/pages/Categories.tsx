@@ -1,63 +1,69 @@
-import { supabase } from '../lib/supabaseClient';
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { CategoriesGrid } from '../components/CategoriesGrid';
+import { useCategories } from '../hooks/useCategories';
+import { Loader } from 'lucide-react';
 
-interface Category {
-  id: string;
-  name: string;
-  icon?: string;
-  itemCount: number;
-}
+export default function CategoriesPage() {
+  const { categories, loading } = useCategories();
 
-const fetchCategories = async () => {
-  try {
-    // First get all categories
-    const { data: categoriesData, error: categoriesError } = await supabase
-      .from('categories')
-      .select('*');
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center"
+          >
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              Browse Categories
+            </h1>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Find what you need across our diverse range of categories. 
+              From textbooks to electronics, we've got everything for campus life.
+            </p>
+          </motion.div>
+        </div>
+      </div>
 
-    console.log('Raw categories:', categoriesData); // Debug log
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {loading ? (
+          <div className="flex justify-center items-center min-h-[400px]">
+            <Loader className="w-8 h-8 animate-spin text-indigo-600" />
+          </div>
+        ) : (
+          <CategoriesGrid categories={categories} />
+        )}
+      </main>
 
-    if (categoriesError) throw categoriesError;
-
-    // Debug: Check the first few items and their structure
-    const { data: sampleItems, error: sampleError } = await supabase
-      .from('items')
-      .select('*')
-      .limit(5);
-
-    console.log('Sample items to check structure:', sampleItems); // This will show us the actual column names
-
-    // Then get count for each category with detailed logging
-    const categoriesWithCounts = await Promise.all(
-      categoriesData.map(async (category) => {
-        // Try both possible column names
-        const { count: count1, error: error1 } = await supabase
-          .from('items')
-          .select('*', { count: 'exact', head: true })
-          .eq('category_id', category.id);
-
-        const { count: count2, error: error2 } = await supabase
-          .from('items')
-          .select('*', { count: 'exact', head: true })
-          .eq('category', category.id);
-
-        console.log(`Counts for ${category.name}:`, {
-          usingCategoryId: count1,
-          usingCategory: count2,
-          error1,
-          error2
-        });
-
-        return {
-          ...category,
-          itemCount: count1 || count2 || 0
-        };
-      })
-    );
-
-    console.log('Final categories with counts:', categoriesWithCounts);
-    setCategories(categoriesWithCounts);
-
-  } catch (error) {
-    console.error('Error in fetchCategories:', error);
-  }
-}; 
+      {/* Stats Section */}
+      <section className="bg-white py-12 mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="text-center">
+              <div className="text-4xl font-bold text-indigo-600 mb-2">
+                {categories.length}
+              </div>
+              <div className="text-gray-600">Categories</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl font-bold text-indigo-600 mb-2">
+                {categories.reduce((acc, cat) => acc + cat.item_count, 0)}
+              </div>
+              <div className="text-gray-600">Total Items</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl font-bold text-indigo-600 mb-2">
+                24/7
+              </div>
+              <div className="text-gray-600">Support Available</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+} 

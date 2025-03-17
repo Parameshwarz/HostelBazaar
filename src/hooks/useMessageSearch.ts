@@ -1,42 +1,41 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { SearchResult } from '../types';
+import { supabase } from '../lib/supabaseClient';
+
+interface SearchResult {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id: string;
+  chat_id: string;
+}
 
 export const useMessageSearch = () => {
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const searchMessages = async (query: string) => {
-    if (!query.trim()) {
+    if (!query) {
       setResults([]);
       return;
     }
 
-    setIsSearching(true);
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('messages')
-        .select('id, chat_id, content, created_at')
-        .textSearch('content', query)
-        .order('created_at', { ascending: false })
-        .limit(20);
+        .select('id, content, created_at, sender_id, chat_id')
+        .textSearch('content', query);
 
       if (error) throw error;
 
-      setResults(
-        data.map(msg => ({
-          messageId: msg.id,
-          chatId: msg.chat_id,
-          content: msg.content,
-          timestamp: msg.created_at
-        }))
-      );
+      setResults(data || []);
     } catch (error) {
-      console.error('Search error:', error);
+      console.error('Error searching messages:', error);
+      setResults([]);
     } finally {
-      setIsSearching(false);
+      setLoading(false);
     }
   };
 
-  return { results, isSearching, searchMessages };
+  return { results, loading, searchMessages };
 }; 

@@ -1,16 +1,22 @@
 import { create } from 'zustand';
-import { User } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
+
+export interface AuthUser {
+  id: string;
+  email?: string;
+  username?: string;
+  avatar_url?: string;
+}
 
 interface AuthState {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
-  setUser: (user: User | null) => void;
+  setUser: (user: AuthUser | null) => void;
   signOut: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
+  user: null as AuthUser | null,
   loading: true,
   setUser: (user) => set({ user, loading: false }),
   signOut: async () => {

@@ -1,43 +1,40 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { Database } from '../utils/supabase-types';
+import { useState, useEffect } from 'react';
+import { getCategoriesWithCount } from '../lib/supabase/queries';
 
-type CategoryWithCount = Database['public']['Tables']['categories']['Row'] & {
-  item_count: number;
-};
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  icon?: string;
+  item_count?: number;
+  subcategories?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    item_count?: number;
+  }>;
+}
 
-export function useCategories() {
-  const [categories, setCategories] = useState<CategoryWithCount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+export const useCategories = () => {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchCategories = async () => {
+    setLoading(true);
+    try {
+      const categoriesData = await getCategoriesWithCount();
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setCategories([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchCategories() {
-      try {
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categories')
-          .select(`
-            *,
-            subcategories (
-              id,
-              name,
-              category_id
-            )
-          `);
-
-        if (categoriesError) throw categoriesError;
-
-        setCategories(categoriesData || []);
-      } catch (err) {
-        console.error('Error in useCategories:', err);
-        setError(err as Error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
     fetchCategories();
   }, []);
 
-  return { categories, isLoading, error };
-}
+  return { categories, loading, fetchCategories };
+};

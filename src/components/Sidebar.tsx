@@ -1,11 +1,20 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Tag } from 'lucide-react';
 import { useCategories } from '../hooks/useCategories';
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { categories, isLoading } = useCategories();
+
+  const handleCategoryClick = (categoryName: string) => {
+    if (location.pathname === '/services') {
+      navigate(`/services?category=${categoryName}`);
+    } else {
+      navigate(`/services?category=${categoryName}`);
+    }
+  };
 
   return (
     <aside className="w-64 bg-white shadow-sm h-[calc(100vh-4rem)] sticky top-16 overflow-y-auto hidden md:block">
@@ -22,7 +31,7 @@ export default function Sidebar() {
             {categories?.map((category) => (
               <button
                 key={category.id}
-                onClick={() => navigate(`/?category=${category.name}`)}
+                onClick={() => handleCategoryClick(category.name)}
                 className="flex items-center w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-md"
               >
                 <Tag className="h-4 w-4 mr-2" />

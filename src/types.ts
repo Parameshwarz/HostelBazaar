@@ -1,44 +1,28 @@
 export interface MessageReaction {
   id: string;
+  message_id: string;
   user_id: string;
-  reaction_type: string;
+  emoji: string;
   created_at: string;
-  username?: string;
 }
 
 export interface Message {
   id: string;
   content: string;
-  content_type: 'text' | 'image' | 'voice' | 'file';
+  created_at: string;
   chat_id: string;
   sender_id: string;
-  status: 'sent' | 'delivered' | 'read';
-  created_at: string;
-  reactions: MessageReaction[];
-  profiles: {
-    id: string;
-    username: string;
-    avatar_url?: string;
-  }[];
-  message_reactions?: {
-    id: string;
-    user_id: string;
-    reaction_type: string;
-    created_at: string;
-  }[];
-  sender?: {
-    id: string;
-    username: string;
-    avatar_url?: string;
-  };
-  deleted_at?: string;
+  reply_to_id: string | null;
+  status: 'error' | 'delivered' | 'seen' | 'sending' | 'sent' | 'deleted';
+  content_type: 'text' | 'image' | 'file';
   edited_at?: string;
-  reply_to?: {
+  sender: {
     id: string;
-    content: string;
-    sender_id: string;
-    content_type?: 'text' | 'image' | 'video' | 'voice' | 'file';
+    username: string;
+    avatar_url: string | null;
   };
+  reply_to?: Message | null;
+  message_reactions?: MessageReaction[];
 }
 
 export type User = {
@@ -50,24 +34,38 @@ export type User = {
 export type Item = {
   id: string;
   title: string;
-  description: string | null;
+  description: string;
   price: number;
   condition: string;
-  category_id: string;
-  subcategory_id: string | null;
   images: string[];
-  uploader_id: string;
-  hostel_name: string;
-  room_number: string;
-  is_negotiable: boolean;
   created_at: string;
-  uploader_username: string;
-  uploader_avatar_url: string | null;
+  category_id: string;
+  subcategory_id: string;
+  user_id: string;
+  is_negotiable: boolean;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  subcategory?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  profiles?: {
+    id: string;
+    username: string;
+    avatar_url?: string;
+    hostel_name?: string;
+    room_number?: string;
+  };
 };
 
 export type TypingStatus = {
-  userId: string;
-  username: string;
+  user_id: string;
+  is_typing: boolean;
+  last_typed: string;
 };
 
 export type Chat = {
@@ -77,14 +75,17 @@ export type Chat = {
   item_id?: string;
   last_message?: string;
   last_message_at?: string;
-  unread_count: number;
-  is_pinned: boolean;
-  is_archived: boolean;
   created_at: string;
-  updated_at: string;
-  other_user: ChatParticipant;
-  item: Item;
-  typing_status?: TypingStatus;
+  updated_at?: string;
+  is_pinned: boolean;
+  meeting_scheduled: boolean;
+  location_agreed: boolean;
+  deal_completed: boolean;
+  other_user: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+  };
 };
 
 export type ChatParticipant = {
@@ -95,3 +96,45 @@ export type ChatParticipant = {
   last_seen?: string;
   about?: string;
 };
+
+export type Category = {
+  id: string;
+  name: string;
+  slug: string;
+  subcategories?: Subcategory[];
+  item_count: number;
+  items?: { count: number }[];
+};
+
+export const CATEGORY_NAMES = {
+  'books-and-stationery': 'Books and Stationery',
+  'electronics': 'Electronics',
+  'furniture': 'Furniture',
+  'clothing': 'Clothing',
+  'kitchen': 'Kitchen',
+  'appliances': 'Appliances',
+  'sports': 'Sports',
+  'other': 'Other'
+} as const;
+
+export type Subcategory = {
+  id: string;
+  name: string;
+  slug: string;
+  category_id: string;
+};
+
+export interface UserTrustInfo {
+  user_id: string;
+  trust_score: number;
+  avg_response_time?: string;
+  completed_deals: number;
+  positive_ratings_percentage: number;
+  created_at: string;
+}
+
+export interface UserBadge {
+  user_id: string;
+  badge_id: string;
+  awarded_at: string;
+}

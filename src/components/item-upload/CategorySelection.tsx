@@ -12,6 +12,7 @@ type Props = {
 export default function CategorySelection({ data, onUpdate }: Props) {
   const { categories, isLoading, error } = useCategories();
   const selectedCategory = categories?.find(c => c.slug === data.category);
+  const selectedSubcategory = selectedCategory?.subcategories?.find(s => s.slug === data.subcategory);
 
   console.log('Current categories:', categories);
   console.log('Selected category:', selectedCategory);
@@ -40,6 +41,24 @@ export default function CategorySelection({ data, onUpdate }: Props) {
     );
   }
 
+  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const category = categories.find(c => c.slug === e.target.value);
+    onUpdate({ 
+      category: e.target.value,
+      category_id: category?.id,
+      subcategory: '',
+      subcategory_id: undefined
+    });
+  };
+
+  const handleSubcategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const subcategory = selectedCategory?.subcategories?.find(s => s.slug === e.target.value);
+    onUpdate({ 
+      subcategory: e.target.value,
+      subcategory_id: subcategory?.id
+    });
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -47,22 +66,29 @@ export default function CategorySelection({ data, onUpdate }: Props) {
       className="space-y-6"
     >
       <div>
-        <label htmlFor="category" className="block text-sm font-medium text-gray-700">
+        <label className="block text-sm font-medium text-gray-700 mb-3">
           Category
         </label>
-        <select
-          id="category"
-          value={data.category}
-          onChange={(e) => onUpdate({ category: e.target.value, subcategory: '' })}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        >
-          <option value="">Select a category</option>
+        <div className="grid grid-cols-2 gap-3">
           {categories?.map((category) => (
-            <option key={category.id} value={category.slug}>
-              {category.name} ({category.item_count} items)
-            </option>
+            <button
+              key={category.id}
+              onClick={() => handleCategoryChange({ target: { value: category.slug } } as any)}
+              className={`flex items-center p-4 rounded-lg border-2 transition-all
+                ${data.category === category.slug 
+                  ? 'border-indigo-600 bg-indigo-50 text-indigo-700' 
+                  : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'
+                }`}
+            >
+              <div className="flex flex-col items-start">
+                <span className="font-medium">{category.name}</span>
+                <span className="text-sm text-gray-500">
+                  {category.subcategories?.length} subcategories
+                </span>
+              </div>
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {selectedCategory && (
@@ -70,22 +96,24 @@ export default function CategorySelection({ data, onUpdate }: Props) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <label htmlFor="subcategory" className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
             Subcategory
           </label>
-          <select
-            id="subcategory"
-            value={data.subcategory}
-            onChange={(e) => onUpdate({ subcategory: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            <option value="">Select a subcategory</option>
-            {selectedCategory.subcategories.map((sub) => (
-              <option key={sub.id} value={sub.slug}>
-                {sub.name} ({sub.item_count} items)
-              </option>
+          <div className="grid grid-cols-2 gap-3">
+            {selectedCategory.subcategories?.map((sub) => (
+              <button
+                key={sub.id}
+                onClick={() => handleSubcategoryChange({ target: { value: sub.slug } } as any)}
+                className={`flex items-center p-4 rounded-lg border-2 transition-all
+                  ${data.subcategory === sub.slug 
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700' 
+                    : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'
+                  }`}
+              >
+                <span className="font-medium">{sub.name}</span>
+              </button>
             ))}
-          </select>
+          </div>
         </motion.div>
       )}
 
