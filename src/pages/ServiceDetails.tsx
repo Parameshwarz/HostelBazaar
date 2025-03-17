@@ -34,7 +34,7 @@ import {
   ChevronDown,
   Info
 } from 'lucide-react';
-import { supabase } from "../lib/supabaseClient";
+import { supabase } from '../lib/supabase';
 import { Service, ServiceLevel, ServiceReview } from '../types/services';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'react-hot-toast';

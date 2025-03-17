@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabase';
 import { TradingItem, RequestItem } from '../../types/trade';
 import { Loader2, ArrowRight } from 'lucide-react';
 
