@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Browse from './pages/Browse';
@@ -138,11 +138,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <Router>
+    <BrowserRouter basename="/HostelBazaar">
       <AuthProvider>
         <Toaster position="top-center" />
         <AppContent />
       </AuthProvider>
-    </Router>
+    </BrowserRouter>
   );
 }
