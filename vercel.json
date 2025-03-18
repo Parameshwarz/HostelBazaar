@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/HostelBazaar/(.*)",
+      "destination": "/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -10,7 +14,7 @@
   "framework": "vite",
   "headers": [
     {
-      "source": "/assets/(.*)",
+      "source": "/(HostelBazaar/)?assets/(.*)\\.js",
       "headers": [
         {
           "key": "Cache-Control",
@@ -23,7 +27,7 @@
       ]
     },
     {
-      "source": "/assets/(.*\\.css)",
+      "source": "/(HostelBazaar/)?assets/(.*)\\.css",
       "headers": [
         {
           "key": "Cache-Control",
@@ -36,7 +40,7 @@
       ]
     },
     {
-      "source": "/(.*\\.(jpg|jpeg|png|gif|ico|svg))",
+      "source": "/(HostelBazaar/)?(.*\\.(jpg|jpeg|png|gif|ico|svg))",
       "headers": [
         {
           "key": "Cache-Control",

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import type { OutputAsset, OutputChunk } from 'rollup';
 
 export default defineConfig({
   plugins: [react()],
@@ -29,6 +30,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: true,
+    manifest: true,
     commonjsOptions: {
       include: [/node_modules/],
       transformMixedEsModules: true
@@ -40,7 +42,18 @@ export default defineConfig({
           'ui-vendor': ['framer-motion', 'react-hot-toast', 'react-image-gallery'],
           'date-utils': ['date-fns']
         },
-        assetFileNames: 'assets/[name].[hash].[ext]'
+        assetFileNames: (info: { name?: string }) => {
+          if (!info.name) return 'assets/[name].[hash][extname]';
+          if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(info.name)) {
+            return 'assets/images/[name].[hash][extname]';
+          }
+          if (/\.css$/i.test(info.name)) {
+            return 'assets/css/[name].[hash][extname]';
+          }
+          return 'assets/[name].[hash][extname]';
+        },
+        chunkFileNames: 'assets/js/[name].[hash].js',
+        entryFileNames: 'assets/js/[name].[hash].js'
       }
     }
   },
