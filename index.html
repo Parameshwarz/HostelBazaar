@@ -6,6 +6,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hostel Bazaar</title>
+    <script>
+      // Handle path issues by redirecting /HostelBazaar paths
+      (function() {
+        const path = window.location.pathname;
+        if (path.startsWith('/HostelBazaar/')) {
+          const newPath = path.replace('/HostelBazaar/', '/');
+          window.location.href = window.location.origin + newPath + window.location.search + window.location.hash;
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
