@@ -26,6 +26,9 @@ export default defineConfig({
     exclude: [],
   },
   build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
     commonjsOptions: {
       include: [/node_modules/],
       transformMixedEsModules: true
@@ -36,7 +39,8 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['framer-motion', 'react-hot-toast', 'react-image-gallery'],
           'date-utils': ['date-fns']
-        }
+        },
+        assetFileNames: 'assets/[name].[hash].[ext]'
       }
     }
   },
