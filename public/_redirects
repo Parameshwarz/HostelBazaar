@@ -1,2 +1,3 @@
+/HostelBazaar/assets/* /assets/:splat 301
 /HostelBazaar/* /:splat 301
 /* /index.html 200 
