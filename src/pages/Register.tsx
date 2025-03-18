@@ -40,6 +40,9 @@ export default function Register() {
       if (error) throw error;
       if (!data.user) throw new Error('Failed to create user');
 
+      // Add a small delay to ensure the user is created in auth.users
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Create profile using the auth user's ID
       const { error: profileError } = await supabase
         .from('profiles')
@@ -52,16 +55,21 @@ export default function Register() {
           onConflict: 'id'
         });
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        // If profile creation fails, we should still allow the user to proceed
+        // They can complete their profile later
+        toast.error('Account created but profile setup incomplete. Please complete your profile later.');
+      } else {
+        // Set user in store only if profile was created successfully
+        setUser({
+          id: data.user.id,
+          email: data.user.email!,
+          username
+        });
+        toast.success('Welcome to Hostel Bazaar!');
+      }
 
-      // Set user in store
-      setUser({
-        id: data.user.id,
-        email: data.user.email!,
-        username
-      });
-
-      toast.success('Welcome to Hostel Bazaar!');
       navigate('/');
     } catch (error: any) {
       console.error('Registration error:', error);
