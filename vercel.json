@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/HostelBazaar/(.*)",
-      "destination": "/$1"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -14,12 +10,8 @@
   "framework": "vite",
   "headers": [
     {
-      "source": "/(HostelBazaar/)?assets/(.*)\\.js",
+      "source": "/assets/(.*)\\.js",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        },
         {
           "key": "Content-Type",
           "value": "application/javascript; charset=utf-8"
@@ -27,12 +19,8 @@
       ]
     },
     {
-      "source": "/(HostelBazaar/)?assets/(.*)\\.css",
+      "source": "/assets/(.*)\\.css",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        },
         {
           "key": "Content-Type",
           "value": "text/css; charset=utf-8"
@@ -40,20 +28,11 @@
       ]
     },
     {
-      "source": "/(HostelBazaar/)?(.*\\.(jpg|jpeg|png|gif|ico|svg))",
+      "source": "/assets/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/index.html",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
         }
       ]
     }
