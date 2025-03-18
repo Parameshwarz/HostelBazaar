@@ -41,33 +41,38 @@ export default function Register() {
       if (!data.user) throw new Error('Failed to create user');
 
       // Add a small delay to ensure the user is created in auth.users
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Create profile using the auth user's ID
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: data.user.id,
-          username,
-          email,
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        });
+      try {
+        // Create profile using the auth user's ID
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            username,
+            email,
+            created_at: new Date().toISOString()
+          }, {
+            onConflict: 'id'
+          });
 
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        // If profile creation fails, we should still allow the user to proceed
-        // They can complete their profile later
-        toast.error('Account created but profile setup incomplete. Please complete your profile later.');
-      } else {
-        // Set user in store only if profile was created successfully
-        setUser({
-          id: data.user.id,
-          email: data.user.email!,
-          username
-        });
-        toast.success('Welcome to Hostel Bazaar!');
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          // If profile creation fails, we should still allow the user to proceed
+          // They can complete their profile later
+          toast.error('Account created but profile setup incomplete. Please complete your profile later.');
+        } else {
+          // Set user in store only if profile was created successfully
+          setUser({
+            id: data.user.id,
+            email: data.user.email!,
+            username
+          });
+          toast.success('Welcome to Hostel Bazaar!');
+        }
+      } catch (profileCreateError) {
+        console.error('Error during profile creation:', profileCreateError);
+        toast.error('Account created but profile setup failed. Please try logging in again later.');
       }
 
       navigate('/');
