@@ -138,7 +138,7 @@ function AppContent() {
 
 export default function App() {
   return (
-    <Router basename="/HostelBazaar">
+    <Router>
       <AuthProvider>
         <Toaster position="top-center" />
         <AppContent />
