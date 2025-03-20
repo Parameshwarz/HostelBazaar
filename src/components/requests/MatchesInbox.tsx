@@ -72,7 +72,14 @@ export default function MatchesInbox() {
             message,
             status,
             created_at,
-            item_details,
+            item_id,
+            items!inner (
+              id,
+              title,
+              images,
+              condition,
+              price
+            ),
             requested_items!inner (
               title,
               description,
@@ -105,7 +112,14 @@ export default function MatchesInbox() {
             message,
             status,
             created_at,
-            item_details,
+            item_id,
+            items!inner (
+              id,
+              title,
+              images,
+              condition,
+              price
+            ),
             requested_items!inner (
               title,
               description,
@@ -134,26 +148,23 @@ export default function MatchesInbox() {
           return acc;
         }, {} as Record<string, any>);
 
-        // Process match data and add item information from item_details
+        // Combine both sets of matches and process the item details
         const matchesMap = new Map();
         [...(sentMatches || []), ...(receivedMatches || [])].forEach(match => {
           if (!matchesMap.has(match.id)) {
-            // Make sure item_details is properly structured to match the UI expectations
-            const itemDetails = match.item_details || {};
-            
-            // If item_details has an item_id, we'll use that to create a mock items array
-            // that the UI code expects
-            const mockItems = itemDetails.item_id ? [{
-              id: itemDetails.item_id,
-              title: itemDetails.title,
-              condition: itemDetails.condition,
-              price: itemDetails.price,
-              images: itemDetails.images || []
-            }] : undefined;
-            
+            // If it's a listed item, use the items data
+            const item = match.items?.[0]; // Get first item from array
+            const itemDetails = match.item_id && item ? {
+              title: item.title,
+              condition: item.condition,
+              price: item.price,
+              item_id: item.id,
+              images: item.images
+            } : match.item_details; // Otherwise use the quick response details
+
             matchesMap.set(match.id, {
               ...match,
-              items: mockItems, // Add mock items array to satisfy the UI code
+              item_details: itemDetails,
               profiles: profilesMap[match.user_id],
               requested_items: Array.isArray(match.requested_items) ? match.requested_items[0] : match.requested_items
             });

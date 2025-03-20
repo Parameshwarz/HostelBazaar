@@ -90,10 +90,20 @@ export interface RequestMatch {
   created_at: string;
   status: 'pending' | 'accepted' | 'rejected';
   message?: string;
-  item_details: {
+  item_id?: string;
+  items?: {
+    id: string;
+    title: string;
+    images: string[];
+    condition: string;
+    price: number;
+  }[];
+  item_details?: {
     title: string;
     condition: string;
     price: number;
+    item_id?: string;
+    images?: string[];
   };
 }
 
