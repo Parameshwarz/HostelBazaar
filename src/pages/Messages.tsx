@@ -118,6 +118,8 @@ export const Messages = () => {
   const [showTrustScore, setShowTrustScore] = useState(false);
   const [showDealProgress, setShowDealProgress] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [subscription, setSubscription] = useState<RealtimeChannel | null>(null);
 
   // Add message validation constants
   const MIN_MESSAGE_LENGTH = 2;
@@ -223,12 +225,17 @@ export const Messages = () => {
       }, (payload) => {
         console.log('Message update received:', payload);
         // Fetch latest messages instead of direct update
-        fetchMessages();
+        fetchMessages(activeChat);
       })
       .subscribe();
 
+    setSubscription(subscription);
+    console.log('Message subscription status:', subscription.state);
+
     return () => {
+      console.log('Cleaning up message subscription');
       subscription.unsubscribe();
+      console.log('Message subscription status:', subscription.state);
     };
   }, [user, activeChat]);
 
@@ -434,15 +441,13 @@ export const Messages = () => {
     }
   };
 
-  const fetchMessages = async () => {
-    if (!activeChat) return;
-    
+  const fetchMessages = async (chatId: string) => {
     try {
-      setIsLoading(true);
-      console.log('Fetching messages for chat:', activeChat);
-      
-      // Simplified query that doesn't rely on message_reactions
-      const { data: messages, error } = await supabase
+      setLoadingMessages(true);
+      console.log('Fetching messages for chat:', chatId);
+
+      // First fetch the basic message data
+      const { data: messageData, error } = await supabase
         .from('messages')
         .select(`
           id,
@@ -452,44 +457,45 @@ export const Messages = () => {
           sender_id,
           created_at,
           status,
-          read_at,
-          sender:profiles!sender_id(
-            id,
-            username,
-            avatar_url
-          ),
-          reply_to:messages(
-            id,
-            chat_id,
-            content,
-            content_type,
-            sender_id,
-            created_at,
-            status,
-            read_at,
-            sender:profiles!sender_id(
-              id,
-              username,
-              avatar_url
-            )
-          )
+          read_at
         `)
-        .eq('chat_id', activeChat)
+        .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching messages:', error);
-        toast.error('Failed to load messages');
-        throw error;
+      if (error) throw error;
+
+      if (!messageData || messageData.length === 0) {
+        console.log('Fetched messages:', []);
+        setMessages([]);
+        setLoadingMessages(false);
+        console.log('Validated messages:', []);
+        return;
       }
 
-      console.log('Fetched messages:', messages);
+      // Then fetch user data for senders
+      const senderIds = [...new Set(messageData.map(m => m.sender_id))];
+      const { data: senderData, error: senderError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', senderIds);
 
-      // Transform messages without relying on message_reactions
-      const validatedMessages = (messages || []).map(msg => {
-        // Process reply_to messages
-        const replyTo = msg.reply_to?.[0];
-        
+      if (senderError) throw senderError;
+
+      // Create a map of user IDs to user data for quick lookup
+      const usersMap = (senderData || []).reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Create properly structured message objects that follow the Message interface
+      const validMessages = messageData.map(msg => {
+        const sender = usersMap[msg.sender_id] || {
+          id: msg.sender_id,
+          username: 'Unknown User',
+          avatar_url: null
+        };
+
+        // Make sure this follows the Message interface
         return {
           id: msg.id,
           chat_id: msg.chat_id,
@@ -499,304 +505,126 @@ export const Messages = () => {
           created_at: msg.created_at,
           status: msg.status || 'sent',
           read_at: msg.read_at,
-          sender: msg.sender || {
-            id: msg.sender_id,
-            username: 'User',
-            avatar_url: null
+          reply_to_id: null, // We'll set this if needed
+          reply_to: null,    // We'll set this if needed
+          sender: {
+            id: sender.id,
+            username: sender.username || 'Unknown',
+            avatar_url: sender.avatar_url
           },
-          reply_to_id: replyTo ? replyTo.id : null,
-          reply_to: replyTo ? {
-            id: replyTo.id,
-            chat_id: replyTo.chat_id,
-            content: replyTo.content,
-            content_type: replyTo.content_type || 'text',
-            sender_id: replyTo.sender_id,
-            created_at: replyTo.created_at,
-            status: replyTo.status || 'sent',
-            read_at: replyTo.read_at,
-            sender: replyTo.sender || {
-              id: replyTo.sender_id,
-              username: 'User',
-              avatar_url: null
-            },
-            reply_to_id: null,
-            reply_to: null,
-            reactions: []
-          } : null,
           reactions: []
-        };
+        } as Message;
       });
 
-      console.log('Validated messages:', validatedMessages);
-      setMessages(validatedMessages);
-      
+      console.log('Fetched messages:', messageData.length);
+      setMessages(validMessages);
+      console.log('Validated messages:', validMessages.length);
+
+      // Mark messages as read if they're not from the current user
+      const unreadMessages = validMessages
+        .filter(msg => msg.sender_id !== user?.id && (!msg.read_at || msg.read_at === null))
+        .map(msg => msg.id);
+
+      if (unreadMessages.length > 0) {
+        await supabase
+          .from('messages')
+          .update({ read_at: new Date().toISOString(), status: 'seen' })
+          .in('id', unreadMessages);
+      }
+
     } catch (error) {
-      console.error('Error in fetchMessages:', error);
-      toast.error('Failed to load messages');
+      console.error('Error fetching messages:', error);
+      toast.error('Failed to load messages. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoadingMessages(false);
     }
   };
 
   useEffect(() => {
-    if (!activeChat) {
-      console.log('No active chat selected');
-      return;
+    if (activeChat) {
+      fetchMessages(activeChat);
     }
-    console.log('Active chat changed to:', activeChat);
-    console.log('Current user:', user);
-    fetchMessages();
-  }, [activeChat]);
+  }, [activeChat, user]);
 
   useEffect(() => {
     if (!activeChat) return;
     
     console.log('Setting up message subscription for chat:', activeChat);
     const subscription = supabase
-      .channel(`messages:${activeChat}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-          filter: `chat_id=eq.${activeChat}`
-        },
-        async (payload) => {
-          console.log('Message subscription event:', payload);
-          
-          if (payload.eventType === 'INSERT') {
-            console.log('New message received:', payload.new);
-            // Fetch the complete message with sender info
-            const { data: newMessage, error } = await supabase
-              .from('messages')
-              .select(`
-                id,
-                chat_id,
-                content,
-                content_type,
-                sender_id,
-                created_at,
-                status,
-                read_at,
-                sender:profiles!sender_id(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                reactions:message_reactions(
-                  id,
-                  message_id,
-                  user_id,
-                  emoji,
-                  created_at,
-                  user:profiles!user_id(
-                    id,
-                    username,
-                    avatar_url
-                  )
-                )
-              `)
-              .eq('id', payload.new.id)
-              .single();
-
-            if (error) {
-              console.error('Error fetching new message:', error);
-              return;
-            }
-
-            const dbMessage = newMessage as DatabaseMessage;
-            const validatedMessage: Message = {
-              id: dbMessage.id,
-              chat_id: dbMessage.chat_id,
-              content: dbMessage.content?.trim() || '',
-              content_type: dbMessage.content_type || 'text',
-              sender_id: dbMessage.sender_id,
-              created_at: validateTimestamp(dbMessage.created_at),
-              status: dbMessage.status || 'sent',
-              read_at: dbMessage.read_at,
-              sender: dbMessage.sender || {
-                id: dbMessage.sender_id,
-                username: 'Unknown User',
-                avatar_url: null
-              },
-              reply_to_id: null,
-              reply_to: null,
-              reactions: (dbMessage.reactions || []).map((reaction: DatabaseMessageReaction) => ({
-                id: reaction.id,
-                message_id: reaction.message_id,
-                user_id: reaction.user_id,
-                emoji: reaction.emoji,
-                created_at: reaction.created_at,
-                user: reaction.user || {
-                  id: reaction.user_id,
-                  username: 'Unknown User',
-                  avatar_url: null
-                }
-              }))
-            };
-
-            setMessages(prev => {
-              const exists = prev.some(msg => msg.id === validatedMessage.id);
-              if (exists) return prev;
-              return [...prev, validatedMessage];
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            console.log('Message updated:', payload.new);
-            // Fetch the complete updated message
-            const { data: updatedMessage, error } = await supabase
-              .from('messages')
-              .select(`
-                id,
-                chat_id,
-                content,
-                content_type,
-                sender_id,
-                created_at,
-                status,
-                read_at,
-                sender:profiles!sender_id(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                reactions:message_reactions(
-                  id,
-                  message_id,
-                  user_id,
-                  emoji,
-                  created_at,
-                  user:profiles!user_id(
-                    id,
-                    username,
-                    avatar_url
-                  )
-                )
-              `)
-              .eq('id', payload.new.id)
-              .single();
-
-            if (error) {
-              console.error('Error fetching updated message:', error);
-              return;
-            }
-
-            const dbMessage = updatedMessage as DatabaseMessage;
-            const validatedMessage: Message = {
-              id: dbMessage.id,
-              chat_id: dbMessage.chat_id,
-              content: dbMessage.content?.trim() || '',
-              content_type: dbMessage.content_type || 'text',
-              sender_id: dbMessage.sender_id,
-              created_at: validateTimestamp(dbMessage.created_at),
-              status: dbMessage.status || 'sent',
-              read_at: dbMessage.read_at,
-              sender: dbMessage.sender || {
-                id: dbMessage.sender_id,
-                username: 'Unknown User',
-                avatar_url: null
-              },
-              reply_to_id: null,
-              reply_to: null,
-              reactions: (dbMessage.reactions || []).map((reaction: DatabaseMessageReaction) => ({
-                id: reaction.id,
-                message_id: reaction.message_id,
-                user_id: reaction.user_id,
-                emoji: reaction.emoji,
-                created_at: reaction.created_at,
-                user: reaction.user || {
-                  id: reaction.user_id,
-                  username: 'Unknown User',
-                  avatar_url: null
-                }
-              }))
-            };
-
-            handleMessageUpdate(validatedMessage);
-          } else if (payload.eventType === 'DELETE') {
-            console.log('Message deleted:', payload.old);
-            const deletedMessage = payload.old;
-            setMessages(prev =>
-              prev.filter(msg => msg.id !== deletedMessage.id)
-            );
-          }
+      .channel(`chat:${activeChat}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${activeChat}`
+      }, async payload => {
+        console.log('New message received:', payload);
+        const newMsg = payload.new as any;
+        
+        // Don't duplicate messages that were sent by this client
+        if (messages.some(m => m.id === newMsg.id)) {
+          return;
         }
-      )
-      .subscribe((status) => {
-        console.log('Message subscription status:', status);
-      });
+
+        try {
+          // Fetch sender info
+          const { data: senderData } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .eq('id', newMsg.sender_id)
+            .single();
+            
+          const sender = senderData || {
+            id: newMsg.sender_id,
+            username: 'Unknown User',
+            avatar_url: null
+          };
+            
+          // Format the message according to the Message interface
+          const formattedMsg: Message = {
+            id: newMsg.id,
+            chat_id: newMsg.chat_id,
+            content: newMsg.content,
+            content_type: newMsg.content_type || 'text',
+            sender_id: newMsg.sender_id,
+            created_at: newMsg.created_at,
+            status: newMsg.status || 'sent',
+            read_at: newMsg.read_at,
+            reply_to_id: null, // We would need to fetch this separately
+            reply_to: null,    // Same here
+            sender: {
+              id: sender.id,
+              username: sender.username || 'Unknown',
+              avatar_url: sender.avatar_url
+            },
+            reactions: []
+          };
+          
+          // Add to message list
+          setMessages(prev => [...prev, formattedMsg]);
+          
+          // Mark as read if not from current user
+          if (formattedMsg.sender_id !== user.id) {
+            await supabase
+              .from('messages')
+              .update({ read_at: new Date().toISOString(), status: 'seen' })
+              .eq('id', formattedMsg.id);
+          }
+        } catch (err) {
+          console.error('Error processing new message:', err);
+        }
+      })
+      .subscribe();
+
+    setSubscription(subscription);
+    console.log('Message subscription status:', subscription.state);
 
     return () => {
       console.log('Cleaning up message subscription');
       subscription.unsubscribe();
+      console.log('Message subscription status:', subscription.state);
     };
-  }, [activeChat]);
-
-  useEffect(() => {
-    // If this is a new chat initiated from an item
-    if (itemId && authUser) {
-      const initializeChat = async () => {
-        try {
-          // First get the item details to get the seller ID
-          const { data: item, error: itemError } = await supabase
-            .from('items')
-            .select('uploader_id, title')
-            .eq('id', itemId)
-            .single();
-
-          if (itemError) throw itemError;
-
-          // Don't create chat with yourself
-          if (item.uploader_id === authUser.id) {
-            toast.error("You can't message yourself!");
-            return;
-          }
-
-          // Check if chat already exists
-          const { data: existingChat, error: chatError } = await supabase
-            .from('chats')
-            .select('id')
-            .eq('item_id', itemId)
-            .eq('participant_1', authUser.id)
-            .eq('participant_2', item.uploader_id)
-            .single();
-
-          if (chatError && chatError.code !== 'PGRST116') { // PGRST116 means no rows returned
-            throw chatError;
-          }
-
-          if (existingChat) {
-            // Chat exists, just select it
-            setActiveChat(existingChat.id);
-            navigate(`/messages/${existingChat.id}`);
-          } else {
-            // Create new chat
-            const { data: newChat, error: createError } = await supabase
-              .from('chats')
-              .insert({
-                item_id: itemId,
-                participant_1: authUser.id,
-                participant_2: item.uploader_id,
-                last_message: `Chat started about: ${item.title}`,
-                last_message_at: new Date().toISOString()
-              })
-              .select()
-              .single();
-
-            if (createError) throw createError;
-
-            setActiveChat(newChat.id);
-            navigate(`/messages/${newChat.id}`);
-          }
-        } catch (err) {
-          console.error('Error initializing chat:', err);
-          toast.error('Failed to start chat');
-        }
-      };
-
-      initializeChat();
-    }
-  }, [itemId, authUser]);
+  }, [activeChat, user, messages]);
 
   // Mock data for missing database columns
   const mockUserTrustInfo = {
@@ -1138,7 +966,7 @@ export const Messages = () => {
       // Create a temp ID for optimistic UI
       const tempId = 'temp-' + Date.now();
       
-      // Add optimistic message to UI
+      // Add optimistic message to UI - follows Message interface
       const optimisticMessage: Message = {
         id: tempId,
         chat_id: activeChat,
@@ -1162,7 +990,7 @@ export const Messages = () => {
       setNewMessage('');
       setReplyingTo(null);
 
-      // Insert message into database
+      // DatabaseMessage has reply_to field, not reply_to_id
       const { error } = await supabase
         .from('messages')
         .insert({
@@ -1171,7 +999,7 @@ export const Messages = () => {
           content: optimisticMessage.content,
           content_type: 'text',
           status: 'sent',
-          reply_to_id: optimisticMessage.reply_to_id
+          reply_to: replyingTo ? [replyingTo] : null // DatabaseMessage requires an array here
         });
 
       if (error) throw error;
@@ -1197,14 +1025,17 @@ export const Messages = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       
+      // Store the temp ID before using it
+      const tempId = 'temp-' + Date.now();
+      
       // Mark message as failed in UI
       setMessages(prev =>
         prev.map(msg =>
-          msg.id === 'temp-' + Date.now() ? { ...msg, status: 'error' } : msg
+          msg.id === tempId ? { ...msg, status: 'error' } : msg
         )
       );
       
-      setFailedMessages(prev => [...prev, 'temp-' + Date.now()]);
+      setFailedMessages(prev => [...prev, tempId]);
       toast.error('Failed to send message. Click to retry.');
     } finally {
       setSendingMessage(false);
