@@ -314,41 +314,24 @@ export const Messages = () => {
       });
   };
 
-  const validateMessage = (message: DatabaseMessage): Message => {
+  const validateMessage = (msg: DatabaseMessage): Message => {
     return {
-      id: message.id,
-      chat_id: message.chat_id,
-      sender_id: message.sender_id,
-      content: message.content,
-      content_type: message.content_type || 'text',
-      status: message.status || 'sent',
-      created_at: message.created_at,
-      read_at: message.read_at || null,
-      reply_to_id: message.reply_to_id || null,
-      reply_to: message.reply_to?.[0] ? {
-        id: message.reply_to[0].id,
-        chat_id: message.reply_to[0].chat_id,
-        sender_id: message.reply_to[0].sender_id,
-        content: message.reply_to[0].content,
-        content_type: message.reply_to[0].content_type || 'text',
-        status: message.reply_to[0].status || 'sent',
-        created_at: message.reply_to[0].created_at,
-        read_at: message.reply_to[0].read_at || null,
-        reply_to_id: null,
-        reply_to: null,
-        sender: message.reply_to[0].sender || {
-          id: message.reply_to[0].sender_id,
-          username: 'User',
-          avatar_url: null
-        },
-        reactions: []
-      } : null,
-      sender: message.sender || {
-        id: message.sender_id,
-        username: 'User',
+      id: msg.id,
+      chat_id: msg.chat_id,
+      sender_id: msg.sender_id,
+      content: msg.content,
+      content_type: msg.content_type || 'text',
+      status: msg.status || 'sent',
+      created_at: msg.created_at,
+      read_at: msg.read_at,
+      reply_to_id: msg.reply_to_id,
+      reply_to: msg.reply_to ? validateMessage(msg.reply_to) : null,
+      sender: msg.sender || {
+        id: msg.sender_id,
+        username: 'Unknown User',
         avatar_url: null
       },
-      reactions: []
+      reactions: msg.reactions || []
     };
   };
 
@@ -427,7 +410,7 @@ export const Messages = () => {
 
       setMessages(prev => 
         prev.map(msg => 
-          msg.id === optimisticMessage.id ? validateMessage(newMessage) : msg
+          msg.id === optimisticMessage.id ? validateMessage(data) : msg
         )
       );
 
@@ -447,18 +430,14 @@ export const Messages = () => {
       setLoadingMessages(true);
       console.log('Fetching messages for chat:', chatId);
 
-      // First fetch the basic message data
+      // Fetch messages with sender and reply data
       const { data: messageData, error } = await supabase
         .from('messages')
         .select(`
-          id,
-          chat_id,
-          content,
-          content_type,
-          sender_id,
-          created_at,
-          status,
-          read_at
+          *,
+          sender:profiles(*),
+          reply_to:messages(*),
+          reactions:message_reactions(*)
         `)
         .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
@@ -466,60 +445,17 @@ export const Messages = () => {
       if (error) throw error;
 
       if (!messageData || messageData.length === 0) {
-        console.log('Fetched messages:', []);
+        console.log('No messages found');
         setMessages([]);
         setLoadingMessages(false);
-        console.log('Validated messages:', []);
         return;
       }
 
-      // Then fetch user data for senders
-      const senderIds = [...new Set(messageData.map(m => m.sender_id))];
-      const { data: senderData, error: senderError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', senderIds);
+      // Process messages to match Message interface
+      const validMessages = messageData.map(msg => validateMessage(msg));
 
-      if (senderError) throw senderError;
-
-      // Create a map of user IDs to user data for quick lookup
-      const usersMap = (senderData || []).reduce((acc, user) => {
-        acc[user.id] = user;
-        return acc;
-      }, {} as Record<string, any>);
-
-      // Create properly structured message objects that follow the Message interface
-      const validMessages = messageData.map(msg => {
-        const sender = usersMap[msg.sender_id] || {
-          id: msg.sender_id,
-          username: 'Unknown User',
-          avatar_url: null
-        };
-
-        // Make sure this follows the Message interface
-        return {
-          id: msg.id,
-          chat_id: msg.chat_id,
-          content: msg.content,
-          content_type: msg.content_type || 'text',
-          sender_id: msg.sender_id,
-          created_at: msg.created_at,
-          status: msg.status || 'sent',
-          read_at: msg.read_at,
-          reply_to_id: null, // We'll set this if needed
-          reply_to: null,    // We'll set this if needed
-          sender: {
-            id: sender.id,
-            username: sender.username || 'Unknown',
-            avatar_url: sender.avatar_url
-          },
-          reactions: []
-        } as Message;
-      });
-
-      console.log('Fetched messages:', messageData.length);
+      console.log('Fetched messages:', validMessages.length);
       setMessages(validMessages);
-      console.log('Validated messages:', validMessages.length);
 
       // Mark messages as read if they're not from the current user
       const unreadMessages = validMessages
@@ -961,13 +897,12 @@ export const Messages = () => {
     e.preventDefault();
     if (!newMessage.trim() || !user || !activeChat || sendingMessage) return;
 
+    const tempId = 'temp-' + Date.now();
+    
     try {
       setSendingMessage(true);
       
-      // Create a temp ID for optimistic UI
-      const tempId = 'temp-' + Date.now();
-      
-      // Add optimistic message to UI - follows Message interface
+      // Add optimistic message to UI
       const optimisticMessage: Message = {
         id: tempId,
         chat_id: activeChat,
@@ -991,43 +926,44 @@ export const Messages = () => {
       setNewMessage('');
       setReplyingTo(null);
 
-      // DatabaseMessage has reply_to field, not reply_to_id
-      const { error } = await supabase
+      // Insert message into database
+      const { data: insertedMessage, error } = await supabase
         .from('messages')
         .insert({
           chat_id: activeChat,
           sender_id: user.id,
-          content: optimisticMessage.content,
+          content: newMessage.trim(),
           content_type: 'text',
           status: 'sent',
-          reply_to: replyingTo ? [replyingTo] : null // DatabaseMessage requires an array here
-        });
+          reply_to_id: replyingTo?.id || null
+        })
+        .select('*, sender:profiles(*), reply_to:messages(*)')
+        .single();
 
       if (error) throw error;
-      
+
       // Update last_message in the chat
       await supabase
         .from('chats')
         .update({
-          last_message: optimisticMessage.content,
-          last_message_at: optimisticMessage.created_at
+          last_message: newMessage.trim(),
+          last_message_at: new Date().toISOString()
         })
         .eq('id', activeChat);
       
-      // Update optimistic message to "sent" status
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === tempId ? { ...msg, status: 'sent' } : msg
-        )
-      );
+      // Replace optimistic message with actual message
+      if (insertedMessage) {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === tempId ? validateMessage(insertedMessage) : msg
+          )
+        );
+      }
         
       setFailedMessages(prev => prev.filter(id => id !== tempId));
 
     } catch (error) {
       console.error('Error sending message:', error);
-      
-      // Store the temp ID before using it
-      const tempId = 'temp-' + Date.now();
       
       // Mark message as failed in UI
       setMessages(prev =>

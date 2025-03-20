@@ -17,8 +17,7 @@ export interface MessageReaction {
   id: string;
   message_id: string;
   user_id: string;
-  emoji: string;
-  username: string;
+  reaction: string;
   created_at: string;
   user?: {
     id: string;
@@ -30,19 +29,19 @@ export interface MessageReaction {
 export interface Message {
   id: string;
   chat_id: string;
-  content: string;
-  content_type: string;
   sender_id: string;
+  content: string;
+  content_type: 'text' | 'image' | 'file';
+  status: 'sending' | 'sent' | 'delivered' | 'seen' | 'error' | 'deleted';
   created_at: string;
-  status: MessageStatus;
   read_at: string | null;
+  reply_to_id: string | null;
+  reply_to?: Message | null;
   sender: {
     id: string;
     username: string;
     avatar_url: string | null;
   };
-  reply_to_id: string | null;
-  reply_to: Message | null;
   reactions: MessageReaction[];
   edited_at?: string;
 }
@@ -65,29 +64,45 @@ export interface DatabaseMessageReaction {
 export interface DatabaseMessage {
   id: string;
   chat_id: string;
+  sender_id: string;
   content: string;
   content_type: 'text' | 'image' | 'file';
-  sender_id: string;
-  created_at: string;
   status: 'sending' | 'sent' | 'delivered' | 'seen' | 'error' | 'deleted';
+  created_at: string;
   read_at: string | null;
-  sender: MessageSender | null;
-  reply_to: DatabaseMessage[] | null;
-  reactions: DatabaseMessageReaction[] | null;
+  reply_to_id: string | null;
+  reply_to?: DatabaseMessage | null;
+  sender?: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+  };
+  reactions?: MessageReaction[];
+  edited_at?: string;
 }
 
 // Chat Types
 export interface Chat {
   id: string;
+  participant_1: string;
+  participant_2: string;
+  item_id?: string;
+  last_message?: string;
+  last_message_at?: string;
   created_at: string;
   updated_at: string;
-  participants: string[];
-  last_message?: Message;
-  unread_count?: number;
+  is_pinned?: boolean;
+  meeting_scheduled?: boolean;
+  location_agreed?: boolean;
+  deal_completed?: boolean;
+  is_blocked?: boolean;
+  is_muted?: boolean;
   other_user?: {
     id: string;
     username: string;
     avatar_url: string | null;
+    last_seen?: string;
+    trust_score?: number;
   };
 }
 
@@ -195,4 +210,13 @@ export interface FilterSidebarProps {
   onClearFilters: () => void;
   filterPresets: FilterPreset[];
   onApplyPreset: (preset: FilterPreset) => void;
+}
+
+export interface MessageProps {
+  message: Message;
+  isOwnMessage: boolean;
+  showSender: boolean;
+  onReply: () => void;
+  onDelete: () => Promise<void>;
+  onEdit: (content: string) => Promise<void>;
 }
