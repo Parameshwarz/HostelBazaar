@@ -91,18 +91,20 @@ export interface Chat {
   last_message_at?: string;
   created_at: string;
   updated_at: string;
-  status: 'active' | 'archived' | 'blocked';
-  other_user: {
+  status?: 'active' | 'archived' | 'blocked';
+  is_pinned?: boolean;
+  meeting_scheduled?: boolean;
+  location_agreed?: boolean;
+  deal_completed?: boolean;
+  is_blocked?: boolean;
+  is_muted?: boolean;
+  other_user?: {
     id: string;
     username: string;
     avatar_url: string | null;
-    online?: boolean;
     last_seen?: string;
     trust_score?: number;
   };
-  pinned?: boolean;
-  muted?: boolean;
-  unread_count?: number;
 }
 
 // User Types
@@ -218,4 +220,11 @@ export interface MessageProps {
   onReply: () => void;
   onDelete: () => Promise<void>;
   onEdit: (content: string) => Promise<void>;
+}
+
+export interface MessageBubbleProps {
+  message: Message;
+  isOwnMessage: boolean;
+  showTimestamp: boolean;
+  timestamp: string;
 }

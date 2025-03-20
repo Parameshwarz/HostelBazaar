@@ -164,6 +164,7 @@ export default function ItemDetails() {
           participant_1: user.id,
           participant_2: item?.profiles?.id,
           item_id: item?.id,
+          other_user_id: item?.profiles?.id,
           created_at: new Date().toISOString(),
           last_message: `Chat started about: ${item?.title}`,
           last_message_at: new Date().toISOString()

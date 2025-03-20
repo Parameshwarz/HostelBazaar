@@ -10,7 +10,7 @@ import {
   Eye
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 
 interface Match {
@@ -55,6 +55,7 @@ export default function MatchesInbox() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received');
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
@@ -432,7 +433,58 @@ export default function MatchesInbox() {
                     </>
                   )}
                   <button
-                    onClick={() => {/* TODO: Implement chat */}}
+                    onClick={async () => {
+                      if (!user) {
+                        toast.error('Please login to start a chat');
+                        navigate('/login');
+                        return;
+                      }
+
+                      try {
+                        // Check if chat exists
+                        const { data: existingChat, error: chatError } = await supabase
+                          .from('chats')
+                          .select('id')
+                          .or(
+                            `and(participant_1.eq.${user.id},participant_2.eq.${match.user_id}),` +
+                            `and(participant_1.eq.${match.user_id},participant_2.eq.${user.id})`
+                          )
+                          .single();
+
+                        if (chatError && chatError.code !== 'PGRST116') {
+                          throw chatError;
+                        }
+
+                        if (existingChat) {
+                          navigate(`/messages/${existingChat.id}`);
+                          return;
+                        }
+
+                        // Create new chat
+                        const { data: newChat, error: createError } = await supabase
+                          .from('chats')
+                          .insert([{
+                            participant_1: user.id,
+                            participant_2: match.user_id,
+                            item_id: match.request_id,
+                            other_user_id: match.user_id,
+                            created_at: new Date().toISOString(),
+                            last_message: `Chat started about: ${match.requested_items.title}`,
+                            last_message_at: new Date().toISOString()
+                          }])
+                          .select()
+                          .single();
+
+                        if (createError) throw createError;
+
+                        if (newChat) {
+                          navigate(`/messages/${newChat.id}`);
+                        }
+                      } catch (error) {
+                        console.error('Error creating chat:', error);
+                        toast.error('Failed to start chat');
+                      }
+                    }}
                     className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
                     title="Chat"
                   >

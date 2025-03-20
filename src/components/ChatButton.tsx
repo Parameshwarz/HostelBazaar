@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
 
 type Props = {
@@ -22,7 +22,8 @@ export default function ChatButton({ itemId, sellerId }: Props) {
     }
 
     if (user.id === sellerId) {
-      return; // Don't allow chatting with yourself
+      toast.error("You can't chat with yourself!");
+      return;
     }
 
     try {
@@ -30,8 +31,10 @@ export default function ChatButton({ itemId, sellerId }: Props) {
       const { data: existingChat, error: searchError } = await supabase
         .from('chats')
         .select('id')
-        .eq('item_id', itemId)
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+        .or(
+          `and(participant_1.eq.${user.id},participant_2.eq.${sellerId}),` +
+          `and(participant_1.eq.${sellerId},participant_2.eq.${user.id})`
+        )
         .single();
 
       if (searchError && searchError.code !== 'PGRST116') {
@@ -46,11 +49,15 @@ export default function ChatButton({ itemId, sellerId }: Props) {
       // Create new chat
       const { data: newChat, error: createError } = await supabase
         .from('chats')
-        .insert({
+        .insert([{
           participant_1: user.id,
           participant_2: sellerId,
-          item_id: itemId
-        })
+          item_id: itemId,
+          other_user_id: sellerId,
+          created_at: new Date().toISOString(),
+          last_message: 'Chat started',
+          last_message_at: new Date().toISOString()
+        }])
         .select()
         .single();
 

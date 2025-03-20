@@ -1,103 +1,36 @@
-import React, { useState } from 'react';
-import { Message } from '../../types';
-
-interface MessageBubbleProps {
-  message: Message;
-  isOwnMessage: boolean;
-  showSender: boolean;
-  onReply: () => void;
-  onDelete: () => Promise<void>;
-  onEdit: (content: string) => Promise<void>;
-}
+import React from 'react';
+import { MessageBubbleProps } from '../../types';
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   isOwnMessage,
-  showSender,
-  onReply,
-  onDelete,
-  onEdit
+  showTimestamp,
+  timestamp
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState(message.content);
-
-  const handleEdit = async () => {
-    if (editedContent.trim() !== message.content) {
-      await onEdit(editedContent.trim());
-    }
-    setIsEditing(false);
-  };
+  const bubbleClasses = isOwnMessage
+    ? 'bg-blue-500 text-white rounded-lg rounded-tr-none'
+    : 'bg-gray-100 text-gray-900 rounded-lg rounded-tl-none';
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[70%] ${isOwnMessage ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg p-3`}>
-        {showSender && !isOwnMessage && (
-          <div className="text-sm font-semibold mb-1">{message.sender.username}</div>
-        )}
-        
-        {isEditing ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={editedContent}
-              onChange={(e) => setEditedContent(e.target.value)}
-              className="flex-1 bg-transparent border-b border-white focus:outline-none"
-              autoFocus
-            />
-            <button
-              onClick={handleEdit}
-              className="text-sm hover:text-gray-200"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => setIsEditing(false)}
-              className="text-sm hover:text-gray-200"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-start gap-2">
-            <div className="flex-1">
-              {message.reply_to && (
-                <div className="text-sm opacity-75 mb-1">
-                  Replied to: {message.reply_to.content}
-                </div>
-              )}
-              <div className="break-words">{message.content}</div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={onReply}
-                className="text-sm hover:opacity-75"
-              >
-                Reply
-              </button>
-              {isOwnMessage && (
-                <>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="text-sm hover:opacity-75"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={onDelete}
-                    className="text-sm hover:opacity-75"
-                  >
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
+    <div className="flex flex-col max-w-[70%]">
+      <div className={`p-3 ${bubbleClasses}`}>
+        {message.reply_to && (
+          <div className="mb-2 pb-2 border-b border-gray-200">
+            <p className="text-sm text-gray-500">
+              {message.reply_to.sender.username}
+            </p>
+            <p className="text-sm text-gray-600 truncate">
+              {message.reply_to.content}
+            </p>
           </div>
         )}
-        
-        <div className="text-xs mt-1 opacity-75">
-          {new Date(message.created_at).toLocaleTimeString()}
-        </div>
+        <p className="whitespace-pre-wrap break-words">{message.content}</p>
       </div>
+      {showTimestamp && (
+        <span className="text-xs text-gray-500 mt-1 self-end">
+          {timestamp}
+        </span>
+      )}
     </div>
   );
 };

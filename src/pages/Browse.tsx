@@ -33,6 +33,7 @@ import ViewModeToggle, { ViewMode } from '../components/trade/ViewModeToggle';
 import QuickViewModal from '../components/trade/QuickViewModal';
 import FilterSidebar from '../components/FilterSidebar';
 import { ItemsGrid } from '../components/ItemsGrid';
+import { supabase } from '../lib/supabaseClient';
 
 // Constants for pagination
 const ITEMS_PER_PAGE = 12;
@@ -461,16 +462,62 @@ export default function Browse() {
   const handleContact = (item: any) => {
     if (!user) {
       toast.error('Please sign in to contact the seller');
+      navigate('/login');
       return;
     }
     
     if (item.user_id === user.id) {
-      toast.error("This is your own item!");
+      toast.error("You can't chat with yourself!");
       return;
     }
 
-    // Navigate to chat with the seller
-    navigate(`/chat/${item.user_id}?item=${item.id}`);
+    // Use supabase to check/create a chat and navigate to it
+    try {
+      (async () => {
+        // Check if chat exists
+        const { data: existingChat, error: searchError } = await supabase
+          .from('chats')
+          .select('id')
+          .or(
+            `and(participant_1.eq.${user.id},participant_2.eq.${item.user_id}),` +
+            `and(participant_1.eq.${item.user_id},participant_2.eq.${user.id})`
+          )
+          .single();
+
+        if (searchError && searchError.code !== 'PGRST116') {
+          throw searchError;
+        }
+
+        if (existingChat) {
+          navigate(`/messages/${existingChat.id}`);
+          return;
+        }
+
+        // Create new chat
+        const { data: newChat, error: createError } = await supabase
+          .from('chats')
+          .insert([{
+            participant_1: user.id,
+            participant_2: item.user_id,
+            item_id: item.id,
+            other_user_id: item.user_id,
+            created_at: new Date().toISOString(),
+            last_message: `Chat started about: ${item.title}`,
+            last_message_at: new Date().toISOString()
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+
+        if (newChat) {
+          navigate(`/messages/${newChat.id}`);
+        }
+      })();
+    } catch (error) {
+      console.error('Error creating chat:', error);
+      toast.error('Failed to start chat');
+    }
   };
 
   // Keyboard navigation
