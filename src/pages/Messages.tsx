@@ -21,8 +21,17 @@ import {
 } from 'lucide-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.tsx';
-import { supabase } from '../lib/supabase';
-import type { Chat, Message, MessageReaction, MessageSender, DatabaseMessage, DatabaseMessageReaction } from '../types';
+import { supabase } from '../lib/supabaseClient';
+import { 
+  Chat, 
+  Message, 
+  MessageReaction 
+} from '../types';
+import { 
+  MessageSender, 
+  DatabaseMessage, 
+  DatabaseMessageReaction 
+} from '../types/index';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useAuthStore } from '../store/authStore';
@@ -303,15 +312,35 @@ export const Messages = () => {
       chat_id: message.chat_id,
       sender_id: message.sender_id,
       content: message.content,
-      content_type: message.content_type,
-      status: message.status,
+      content_type: message.content_type || 'text',
+      status: message.status || 'sent',
       created_at: message.created_at,
-      updated_at: message.updated_at,
-      read_at: message.read_at,
-      reply_to_id: message.reply_to_id,
-      reply_to: message.reply_to ? validateMessage(message.reply_to) : null,
-      sender: message.sender,
-      reactions: message.reactions || []
+      read_at: message.read_at || null,
+      reply_to_id: message.reply_to_id || null,
+      reply_to: message.reply_to?.[0] ? {
+        id: message.reply_to[0].id,
+        chat_id: message.reply_to[0].chat_id,
+        sender_id: message.reply_to[0].sender_id,
+        content: message.reply_to[0].content,
+        content_type: message.reply_to[0].content_type || 'text',
+        status: message.reply_to[0].status || 'sent',
+        created_at: message.reply_to[0].created_at,
+        read_at: message.reply_to[0].read_at || null,
+        reply_to_id: null,
+        reply_to: null,
+        sender: message.reply_to[0].sender || {
+          id: message.reply_to[0].sender_id,
+          username: 'User',
+          avatar_url: null
+        },
+        reactions: []
+      } : null,
+      sender: message.sender || {
+        id: message.sender_id,
+        username: 'User',
+        avatar_url: null
+      },
+      reactions: []
     };
   };
 
@@ -336,24 +365,35 @@ export const Messages = () => {
   };
 
   const handleSendMessage = async (content: string, replyToId?: string) => {
-    if (!user || !selectedChat) return;
+    if (!user || !activeChat) return;
 
-    const optimisticMessage: Message = {
-      id: crypto.randomUUID(),
-      chat_id: selectedChat.id,
+    const tempId = 'temp-' + Date.now();
+    const messageData = {
+      content: content.trim(),
+      chat_id: activeChat,
       sender_id: user.id,
-      content,
+      reply_to_id: replyToId || null,
+      status: 'sent',
+      content_type: 'text',
+      created_at: new Date().toISOString()
+    };
+
+    // Create optimistic message for UI
+    const optimisticMessage: Message = {
+      id: tempId,
+      chat_id: activeChat,
+      sender_id: user.id,
+      content: content.trim(),
       content_type: 'text',
       status: 'sending',
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
       read_at: null,
       reply_to_id: replyToId || null,
       reply_to: replyToId ? messages.find(m => m.id === replyToId) || null : null,
       sender: {
         id: user.id,
-        username: user.username,
-        avatar_url: user.avatar_url
+        username: user.email?.split('@')[0] || 'User',
+        avatar_url: null
       },
       reactions: []
     };
@@ -361,12 +401,13 @@ export const Messages = () => {
     setMessages(prev => [...prev, optimisticMessage]);
 
     try {
-      const { data: newMessage, error } = await supabase
+      // Insert message into database
+      const { data, error } = await supabase
         .from('messages')
         .insert([{
-          chat_id: selectedChat.id,
+          chat_id: activeChat,
           sender_id: user.id,
-          content,
+          content: content.trim(),
           content_type: 'text',
           status: 'sent',
           reply_to_id: replyToId
@@ -400,6 +441,7 @@ export const Messages = () => {
       setIsLoading(true);
       console.log('Fetching messages for chat:', activeChat);
       
+      // Simplified query that doesn't rely on message_reactions
       const { data: messages, error } = await supabase
         .from('messages')
         .select(`
@@ -441,107 +483,57 @@ export const Messages = () => {
         throw error;
       }
 
-      // After fetching messages, get reactions separately
-      const { data: reactions, error: reactionsError } = await supabase
-        .from('message_reactions')
-        .select(`
-          id,
-          message_id,
-          user_id,
-          emoji,
-          created_at,
-          user:profiles!user_id(
-            id,
-            username,
-            avatar_url
-          )
-        `)
-        .in('message_id', messages?.map(m => m.id) || []);
-
-      if (reactionsError) {
-        console.error('Error fetching reactions:', reactionsError);
-      }
-
-      const messageReactions = reactions?.reduce((acc, reaction) => {
-        if (!acc[reaction.message_id]) {
-          acc[reaction.message_id] = [];
-        }
-        acc[reaction.message_id].push(reaction);
-        return acc;
-      }, {} as Record<string, DatabaseMessageReaction[]>) || {};
-
       console.log('Fetched messages:', messages);
 
-      // Transform and validate messages
-      const validatedMessages: Message[] = (messages || []).map((msg: DatabaseMessage) => {
+      // Transform messages without relying on message_reactions
+      const validatedMessages = (messages || []).map(msg => {
+        // Process reply_to messages
         const replyTo = msg.reply_to?.[0];
-        const replyToMessage: Message | null = replyTo ? {
-          id: replyTo.id,
-          chat_id: replyTo.chat_id,
-          content: replyTo.content,
-          content_type: replyTo.content_type || 'text',
-          sender_id: replyTo.sender_id,
-          created_at: replyTo.created_at,
-          status: replyTo.status || 'sent',
-          read_at: replyTo.read_at,
-          sender: replyTo.sender || {
-            id: replyTo.sender_id,
-            username: 'Unknown User',
-            avatar_url: null
-          },
-          reply_to_id: null,
-          reply_to: null,
-          reactions: []
-        } : null;
-
+        
         return {
           id: msg.id,
           chat_id: msg.chat_id,
-          content: msg.content?.trim() || '',
+          content: msg.content,
           content_type: msg.content_type || 'text',
           sender_id: msg.sender_id,
-          created_at: validateTimestamp(msg.created_at),
+          created_at: msg.created_at,
           status: msg.status || 'sent',
           read_at: msg.read_at,
           sender: msg.sender || {
             id: msg.sender_id,
-            username: 'Unknown User',
+            username: 'User',
             avatar_url: null
           },
-          reply_to_id: replyTo?.id || null,
-          reply_to: replyToMessage,
-          reactions: messageReactions[msg.id] || []
+          reply_to_id: replyTo ? replyTo.id : null,
+          reply_to: replyTo ? {
+            id: replyTo.id,
+            chat_id: replyTo.chat_id,
+            content: replyTo.content,
+            content_type: replyTo.content_type || 'text',
+            sender_id: replyTo.sender_id,
+            created_at: replyTo.created_at,
+            status: replyTo.status || 'sent',
+            read_at: replyTo.read_at,
+            sender: replyTo.sender || {
+              id: replyTo.sender_id,
+              username: 'User',
+              avatar_url: null
+            },
+            reply_to_id: null,
+            reply_to: null,
+            reactions: []
+          } : null,
+          reactions: []
         };
       });
 
       console.log('Validated messages:', validatedMessages);
-
-      // Group messages by date and remove duplicates
-      const grouped = groupMessagesByDate(validatedMessages);
-      const sortedMessages = Object.values(grouped)
-        .flat()
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        .filter(msg => isValidMessageContent(msg.content));
-
-      setMessages(sortedMessages);
-      setIsLoading(false);
-
-      // Mark messages as read
-      if (sortedMessages.length > 0) {
-        const { error: updateError } = await supabase
-          .from('messages')
-          .update({ status: 'seen' })
-          .eq('chat_id', activeChat)
-          .neq('sender_id', user?.id)
-          .in('status', ['sent', 'delivered']);
-
-        if (updateError) {
-          console.error('Error updating message status:', updateError);
-        }
-      }
+      setMessages(validatedMessages);
+      
     } catch (error) {
       console.error('Error in fetchMessages:', error);
       toast.error('Failed to load messages');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -1140,59 +1132,79 @@ export const Messages = () => {
     e.preventDefault();
     if (!newMessage.trim() || !user || !activeChat || sendingMessage) return;
 
-    const tempId = 'temp-' + Date.now();
-    const messageData = {
-      content: newMessage.trim(),
-      chat_id: activeChat,
-      sender_id: user.id,
-      reply_to_id: replyingTo?.id || null,
-      status: 'sent',
-      created_at: new Date().toISOString()
-    };
-
     try {
       setSendingMessage(true);
-      setMessages(prev => [...prev, { 
-        ...messageData, 
+      
+      // Create a temp ID for optimistic UI
+      const tempId = 'temp-' + Date.now();
+      
+      // Add optimistic message to UI
+      const optimisticMessage: Message = {
         id: tempId,
+        chat_id: activeChat,
+        sender_id: user.id,
+        content: newMessage.trim(),
+        content_type: 'text',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+        read_at: null,
+        reply_to_id: replyingTo?.id || null,
+        reply_to: replyingTo,
         sender: {
           id: user.id,
           username: user.email?.split('@')[0] || 'User',
           avatar_url: null
         },
-        reply_to: replyingTo,
-        message_reactions: [],
-        content_type: 'text'
-      } as Message]);
+        reactions: []
+      };
       
+      setMessages(prev => [...prev, optimisticMessage]);
       setNewMessage('');
       setReplyingTo(null);
 
-      const { data: insertedMessage, error } = await supabase
+      // Insert message into database
+      const { error } = await supabase
         .from('messages')
-        .insert([messageData])
-        .select()
-        .single();
+        .insert({
+          chat_id: activeChat,
+          sender_id: user.id,
+          content: optimisticMessage.content,
+          content_type: 'text',
+          status: 'sent',
+          reply_to_id: optimisticMessage.reply_to_id
+        });
 
       if (error) throw error;
-
-      setMessages(prev => prev.map(msg => 
-        msg.id === tempId ? {
-          ...insertedMessage,
-          sender: {
-            id: user.id,
-            username: user.email?.split('@')[0] || 'User',
-            avatar_url: null
-          },
-          content_type: 'text',
-          message_reactions: []
-        } as Message : msg
-      ));
+      
+      // Update last_message in the chat
+      await supabase
+        .from('chats')
+        .update({
+          last_message: optimisticMessage.content,
+          last_message_at: optimisticMessage.created_at
+        })
+        .eq('id', activeChat);
+      
+      // Update optimistic message to "sent" status
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === tempId ? { ...msg, status: 'sent' } : msg
+        )
+      );
+        
       setFailedMessages(prev => prev.filter(id => id !== tempId));
 
     } catch (error) {
       console.error('Error sending message:', error);
-      setFailedMessages(prev => [...prev, tempId]);
+      
+      // Mark message as failed in UI
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === 'temp-' + Date.now() ? { ...msg, status: 'error' } : msg
+        )
+      );
+      
+      setFailedMessages(prev => [...prev, 'temp-' + Date.now()]);
       toast.error('Failed to send message. Click to retry.');
     } finally {
       setSendingMessage(false);
@@ -1400,7 +1412,7 @@ export const Messages = () => {
         >
           {showTimestamp && (
             <div className="text-xs text-gray-500 mb-1 px-2">
-              {formatMessageTimestamp(message.created_at)}
+              {formatMessageTime(message.created_at)}
             </div>
           )}
           <MessageBubble
@@ -1843,6 +1855,16 @@ export const Messages = () => {
         msg.id === updatedMessage.id ? updatedMessage : msg
       )
     );
+  };
+
+  // Add this missing function right after formatMessageTime
+  const formatMessageTimestamp = (timestamp: string): string => {
+    try {
+      return format(new Date(timestamp), 'MMM d, h:mm a');
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return '';
+    }
   };
 
   return (
