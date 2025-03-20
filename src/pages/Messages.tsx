@@ -42,6 +42,7 @@ import SmartReplies from '../components/SmartReplies';
 import UserTrustScore from '../components/UserTrustScore';
 import { MessageStatusIndicator } from '../components/MessageStatusIndicator';
 import { MessageActions } from '../components/MessageActions';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 type MessageAction = 'edit' | 'delete' | 'reply' | 'copy';
 
@@ -1230,33 +1231,54 @@ export const Messages = () => {
   };
 
   const renderMessages = () => {
-    return messages.map((message, index) => {
-      const isOwnMessage = message.sender_id === user?.id;
-      const showSender = shouldShowSender(message, index, messages);
-      const showTimestamp = shouldShowTimestamp(message, index);
+    try {
+      if (!messages || messages.length === 0) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <p className="text-gray-500">No messages yet</p>
+            <p className="text-sm text-gray-400">Start the conversation!</p>
+          </div>
+        );
+      }
+      
+      return messages.map((message, index) => {
+        if (!message) return null;
+        
+        const isOwnMessage = message.sender_id === user?.id;
+        const showSender = shouldShowSender(message, index, messages);
+        const showTimestamp = shouldShowTimestamp(message, index);
 
+        return (
+          <div
+            key={message.id}
+            id={`message-${message.id}`}
+            className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} mb-4`}
+          >
+            {showTimestamp && (
+              <div className="text-xs text-gray-500 mb-1 px-2">
+                {formatMessageTime(message.created_at)}
+              </div>
+            )}
+            <MessageBubble
+              message={message}
+              isOwnMessage={isOwnMessage}
+              showSender={showSender}
+              onReply={() => handleReplyMessage(message.id)}
+              onDelete={() => handleDeleteMessage(message.id)}
+              onEdit={(content) => handleEditMessage(message.id, content)}
+            />
+          </div>
+        );
+      });
+    } catch (error) {
+      console.error('Error rendering messages:', error);
       return (
-        <div
-          key={message.id}
-          id={`message-${message.id}`}
-          className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} mb-4`}
-        >
-          {showTimestamp && (
-            <div className="text-xs text-gray-500 mb-1 px-2">
-              {formatMessageTime(message.created_at)}
-            </div>
-          )}
-          <MessageBubble
-            message={message}
-            isOwnMessage={isOwnMessage}
-            showSender={showSender}
-            onReply={() => handleReplyMessage(message.id)}
-            onDelete={() => handleDeleteMessage(message.id)}
-            onEdit={(content) => handleEditMessage(message.id, content)}
-          />
+        <div className="flex flex-col items-center justify-center h-full gap-2">
+          <p className="text-red-500">Error displaying messages</p>
+          <p className="text-sm text-gray-400">Please try refreshing the page</p>
         </div>
       );
-    });
+    }
   };
 
   // Add the getInitialAvatar helper function at the top
@@ -1899,15 +1921,13 @@ export const Messages = () => {
         <div className="flex-1 flex min-h-0">
           {/* Messages area */}
           <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex-1 overflow-y-auto px-3 py-4">
-              {loading ? (
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto px-3 py-4"
+            >
+              {loadingMessages ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full gap-2">
-                  <p className="text-gray-500">No messages yet</p>
-                  <p className="text-sm text-gray-400">Start the conversation!</p>
                 </div>
               ) : (
                 <div className="space-y-2">
