@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Message } from '../../types';
+import { Message } from '../../types/index';
 import { shouldShowSender, shouldShowTimestamp, formatMessageTimestamp, getInitialAvatar } from './messageUtils';
 import MessageBubble from './MessageBubble';
 
@@ -79,9 +79,9 @@ const MessageList: React.FC<MessageListProps> = ({
                 </span>
               </div>
             )}
-            <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex w-full ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
               <div 
-                className="relative group" 
+                className="relative group max-w-[80%]" 
                 onClick={() => onReply(message)}
               >
                 <MessageBubble
