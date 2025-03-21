@@ -10,59 +10,69 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   useEffect(() => {
     if (!chatId || !userId) return;
     
-    const typingChannel = supabase.channel(`typing-${chatId}`);
+    console.log(`Setting up typing channel for chat: ${chatId}`);
+    const channel = supabase.channel(`chat:${chatId}`);
     
-    typingChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = typingChannel.presenceState();
+    // Subscribe to typing broadcasts
+    channel
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        console.log('Received typing event:', payload);
         
-        // Transform presence state to typing users
-        const typingState: TypingStatus[] = [];
-        Object.keys(state).forEach(key => {
-          if (key.startsWith('user-')) {
-            const user = state[key][0];
-            if (user.user_id !== userId && user.is_typing) {
-              typingState.push({
-                userId: user.user_id,
-                username: user.username || 'User',
-                isTyping: user.is_typing
-              });
-            }
-          }
-        });
+        // Don't update for own typing events
+        if (payload.payload.userId === userId) return;
         
-        setTypingUsers(typingState);
-        console.log('Typing users:', typingState);
+        if (payload.payload.isTyping) {
+          // Add typing user if not already in list
+          setTypingUsers(current => {
+            const exists = current.some(user => user.userId === payload.payload.userId);
+            if (exists) return current;
+            
+            return [...current, {
+              userId: payload.payload.userId,
+              username: payload.payload.username || 'User',
+              isTyping: true
+            }];
+          });
+        } else {
+          // Remove user from typing list
+          setTypingUsers(current => 
+            current.filter(user => user.userId !== payload.payload.userId)
+          );
+        }
       })
       .subscribe();
     
-    // Function to update typing status
-    const updateTypingStatus = (typing: boolean) => {
-      if (!typingChannel) return;
-      
-      // Only update if status changed
-      if (typing !== isTyping) {
-        setIsTyping(typing);
-        typingChannel.track({
-          user_id: userId,
-          username: username,
-          is_typing: typing
+    // Clean up subscription on unmount
+    return () => {
+      // Send that we stopped typing when leaving
+      if (isTyping) {
+        channel.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { userId, username, isTyping: false }
         });
       }
-    };
-    
-    // Clean up
-    return () => {
-      updateTypingStatus(false);
-      typingChannel.untrack();
-      typingChannel.unsubscribe();
+      channel.unsubscribe();
     };
   }, [chatId, userId, username, isTyping]);
   
-  // Function to indicate user is typing
+  // Function to broadcast typing status
   const setUserTyping = useCallback((typing: boolean) => {
-    setIsTyping(typing);
-  }, []);
+    if (!chatId || !userId) return;
+    
+    // Only send update if status changed
+    if (typing !== isTyping) {
+      console.log(`Sending typing status: ${typing} to chat: ${chatId}`);
+      setIsTyping(typing);
+      
+      const channel = supabase.channel(`chat:${chatId}`);
+      channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { userId, username, isTyping: typing }
+      });
+    }
+  }, [chatId, userId, username, isTyping]);
   
   // Create debounced typing indicator
   const indicateTyping = useCallback(() => {
