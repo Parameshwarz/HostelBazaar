@@ -12,6 +12,107 @@ export const useMessages = (chatId: string | null, userId: string) => {
   const [page, setPage] = useState(1);
   const messagesPerPage = 50;
   const channelRef = useRef<any>(null);
+  const lastMessageTimeRef = useRef<Date>(new Date());
+
+  // Force regular refresh of messages in addition to real-time
+  useEffect(() => {
+    if (!chatId) return;
+    
+    // Set up a regular poll to ensure new messages are fetched
+    // This is a fallback in case real-time fails
+    const intervalId = setInterval(() => {
+      console.log('Polling for new messages as fallback');
+      fetchLatestMessages();
+    }, 5000); // Poll every 5 seconds
+    
+    return () => clearInterval(intervalId);
+  }, [chatId]);
+  
+  // Special function to just fetch the latest messages since last fetch
+  const fetchLatestMessages = async () => {
+    if (!chatId) return;
+    try {
+      const lastTime = lastMessageTimeRef.current;
+      console.log(`Fetching messages newer than ${lastTime.toISOString()}`);
+      
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .gt('created_at', lastTime.toISOString())
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching latest messages:', error);
+        return;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log('No new messages found');
+        return;
+      }
+      
+      console.log(`Found ${data.length} new messages via polling`);
+      
+      // Get all the sender IDs
+      const senderIds = Array.from(new Set(data.map(msg => msg.sender_id)));
+      
+      // Fetch sender profiles
+      const { data: senderProfiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', senderIds);
+      
+      const profilesMap = new Map(senderProfiles?.map(p => [p.id, p]) || []);
+      
+      // Process messages
+      const newMessages = data.map(msg => {
+        const sender = profilesMap.get(msg.sender_id);
+        return validateMessage({
+          ...msg,
+          sender: sender ? {
+            id: sender.id,
+            username: sender.username,
+            avatar_url: sender.avatar_url
+          } : {
+            id: msg.sender_id,
+            username: 'Unknown User',
+            avatar_url: null
+          },
+          reactions: []
+        } as DatabaseMessage);
+      });
+      
+      // Update state with new messages
+      setMessages(prev => {
+        // Filter out duplicates
+        const msgIds = new Set(prev.map(m => m.id));
+        const uniqueNew = newMessages.filter(m => !msgIds.has(m.id));
+        
+        if (uniqueNew.length === 0) return prev;
+        
+        // Update last message time
+        const newestMsg = newMessages[newMessages.length - 1];
+        lastMessageTimeRef.current = new Date(newestMsg.created_at);
+        
+        // Add and sort messages
+        return [...prev, ...uniqueNew].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      });
+      
+      // Mark messages as read
+      const otherUserMsgs = data.filter(msg => msg.sender_id !== userId && !msg.read_at);
+      if (otherUserMsgs.length > 0) {
+        await supabase
+          .from('messages')
+          .update({ read_at: new Date().toISOString() })
+          .in('id', otherUserMsgs.map(msg => msg.id));
+      }
+    } catch (err) {
+      console.error('Error in fetchLatestMessages:', err);
+    }
+  };
 
   const fetchMessages = useCallback(async (pageNum: number = 1) => {
     if (!chatId) return;
@@ -45,6 +146,15 @@ export const useMessages = (chatId: string | null, userId: string) => {
         setLoading(false);
         return;
       }
+
+      // Update our last message time reference
+      const newestMsg = messagesData.reduce((latest, msg) => {
+        const msgTime = new Date(msg.created_at).getTime();
+        const latestTime = new Date(latest.created_at).getTime();
+        return msgTime > latestTime ? msg : latest;
+      }, messagesData[0]);
+      
+      lastMessageTimeRef.current = new Date(newestMsg.created_at);
 
       // Get all unique sender IDs
       const senderIds = new Set(messagesData.map(msg => msg.sender_id));
@@ -226,6 +336,11 @@ export const useMessages = (chatId: string | null, userId: string) => {
         )
       );
 
+      // Force a fetch of latest messages for all users
+      await supabase.from('chat_updates').insert([
+        { chat_id: chatId, updated_at: new Date().toISOString() }
+      ]);
+
       return messageData;
     } catch (err) {
       console.error('Error in sendMessage:', err);
@@ -248,7 +363,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
     }
   }, [loading, hasMore, page, fetchMessages]);
 
-  // Handle real-time updates - SIMPLIFIED IMPLEMENTATION
+  // Handle real-time updates - GUARANTEED DELIVERY APPROACH
   useEffect(() => {
     if (!chatId) return;
     
@@ -263,76 +378,35 @@ export const useMessages = (chatId: string | null, userId: string) => {
       channelRef.current = null;
     }
     
-    // Use a more direct and simple subscription
-    const channel = supabase.channel(`chat-${chatId}-${Date.now()}`, {
-      config: { 
-        broadcast: { self: false }
-      }
-    });
+    // Use multiple approaches to ensure message delivery
     
-    // Complete message handler (processes raw message data and adds to state)
+    // 1. Basic message subscription
+    const channelName = `chat-${chatId}-${Date.now()}`;
+    const channel = supabase.channel(channelName);
+    
+    // Function to process new messages
     const processNewMessage = async (payload: any) => {
       try {
-        console.log('Received new message payload:', payload);
+        console.log('Real-time UPDATE received:', payload);
         
-        // Skip messages from self (already handled by optimistic updates)
+        // Skip my own messages (already handled by optimistic updates)
         if (payload.new.sender_id === userId) {
-          console.log('Skipping message from self');
+          console.log('Skipping own message');
           return;
         }
         
-        // Fetch sender profile for this message
-        const { data: senderData } = await supabase
-          .from('profiles')
-          .select('id, username, avatar_url')
-          .eq('id', payload.new.sender_id)
-          .single();
+        // Immediately trigger a fetch of latest messages
+        // This is the safest approach to ensure we get all messages
+        fetchLatestMessages();
         
-        if (!senderData) {
-          console.error('Could not find sender profile');
-          return;
-        }
-        
-        // Construct full message
-        const newMsg: DatabaseMessage = {
-          ...payload.new,
-          sender: {
-            id: senderData.id,
-            username: senderData.username,
-            avatar_url: senderData.avatar_url
-          },
-          reactions: []
-        };
-        
-        // Validate and add to message list
-        const validatedMsg = validateMessage(newMsg);
-        console.log('Adding new message to state:', validatedMsg);
-        
-        setMessages(prev => {
-          // Check if message already exists to prevent duplicates
-          if (prev.some(m => m.id === validatedMsg.id)) {
-            return prev;
-          }
-          
-          // Add and sort messages
-          const updated = [...prev, validatedMsg].sort(
-            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          );
-          return updated;
-        });
-        
-        // Mark as read
-        await supabase
-          .from('messages')
-          .update({ read_at: new Date().toISOString() })
-          .eq('id', payload.new.id);
-          
       } catch (err) {
         console.error('Error processing new message:', err);
+        // Fallback - fetch all messages if there's an error
+        fetchLatestMessages();
       }
     };
     
-    // Subscribe to message inserts
+    // Subscribe to INSERT, UPDATE events on messages table
     channel
       .on('postgres_changes', {
         event: 'INSERT',
@@ -340,16 +414,27 @@ export const useMessages = (chatId: string | null, userId: string) => {
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
       }, processNewMessage)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chat_updates',
+        filter: `chat_id=eq.${chatId}`
+      }, () => {
+        console.log('Chat update triggered, fetching latest messages');
+        fetchLatestMessages();
+      })
       .subscribe((status, err) => {
-        console.log(`Subscription status: ${status}`, err || '');
+        console.log(`Real-time subscription status: ${status}`, err || '');
         if (status === 'SUBSCRIBED') {
           console.log('Successfully subscribed to real-time messages');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Error subscribing to real-time messages:', err);
-          setError('Failed to connect to real-time messages');
+          // Immediately fetch messages to ensure we have the latest
+          fetchLatestMessages();
+        } else {
+          console.error('Error with real-time subscription:', err);
+          setError('Real-time connection error');
         }
       });
-      
+    
     channelRef.current = channel;
     
     return () => {
