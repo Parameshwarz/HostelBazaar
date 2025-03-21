@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Message } from '../../types/index';
 import { shouldShowSender, shouldShowTimestamp, formatMessageTimestamp, getInitialAvatar } from './messageUtils';
 import MessageBubble from './MessageBubble';
@@ -20,15 +20,6 @@ const MessageList: React.FC<MessageListProps> = ({
   onReply,
   currentUserId
 }) => {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Scroll to bottom when new messages are added
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -79,9 +70,9 @@ const MessageList: React.FC<MessageListProps> = ({
                 </span>
               </div>
             )}
-            <div className={`flex w-full ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
               <div 
-                className="relative group max-w-[80%]" 
+                className="relative group" 
                 onClick={() => onReply(message)}
               >
                 <MessageBubble
@@ -121,9 +112,6 @@ const MessageList: React.FC<MessageListProps> = ({
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
         </div>
       )}
-      
-      {/* Invisible element to scroll to */}
-      <div ref={messagesEndRef} />
     </div>
   );
 };

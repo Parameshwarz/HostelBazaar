@@ -41,8 +41,9 @@ export const Messages = () => {
     loading: messagesLoading,
     error: messagesError,
     sendMessage,
-    fetchMessages
-  } = useMessages(selectedChat?.id || null, user?.id || '');
+    fetchMessages,
+    scrollToBottom
+  } = useMessages(selectedChat?.id || null, user?.id || '', messagesContainerRef);
 
   // Add presence tracking for online status
   const { isUserOnline } = usePresence(user?.id || null);
@@ -60,7 +61,7 @@ export const Messages = () => {
   // Initialize chat and fetch messages when component mounts
   useEffect(() => {
     if (user) {
-    fetchChats();
+      fetchChats();
     }
   }, [user, fetchChats]);
 
@@ -71,6 +72,14 @@ export const Messages = () => {
       fetchDealStatus(selectedChat.id);
     }
   }, [selectedChat, fetchMessages]);
+
+  // Ensure proper scroll when chat view changes
+  useEffect(() => {
+    if (selectedChat && messages.length > 0 && !messagesLoading) {
+      // Scroll to bottom when chat is selected with small delay for render
+      setTimeout(() => scrollToBottom(false), 200);
+    }
+  }, [selectedChat, messages, messagesLoading, scrollToBottom]);
 
   const fetchDealStatus = async (chatId: string) => {
     // This would be an actual API call in a real app
@@ -87,6 +96,7 @@ export const Messages = () => {
     
     try {
       await sendMessage(content, selectedChat.id);
+      // Scroll is now handled in the useMessages hook
     } catch (error) {
       console.error('Error sending message:', error);
     }

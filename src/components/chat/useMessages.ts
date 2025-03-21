@@ -4,7 +4,7 @@ import { Message } from '../../types';
 import { DatabaseMessage, MessageStatus } from './chatTypes';
 import { validateMessage, removeDuplicateMessages } from './messageUtils';
 
-export const useMessages = (chatId: string | null, userId: string) => {
+export const useMessages = (chatId: string | null, userId: string, containerRef?: React.RefObject<HTMLDivElement>) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,6 +13,26 @@ export const useMessages = (chatId: string | null, userId: string) => {
   const messagesPerPage = 50;
   const channelRef = useRef<any>(null);
   const lastMessageTimeRef = useRef<Date>(new Date());
+
+  // Function to scroll to the bottom of the container
+  const scrollToBottom = useCallback((smooth: boolean = true) => {
+    if (!containerRef?.current) return;
+    
+    console.log('Scrolling to bottom of chat container');
+    
+    // Use modern scrollTo with options
+    containerRef.current.scrollTo({
+      top: containerRef.current.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto'
+    });
+  }, [containerRef]);
+
+  // Scroll when new messages are added
+  useEffect(() => {
+    if (messages.length > 0 && !loading) {
+      setTimeout(() => scrollToBottom(), 100);
+    }
+  }, [messages, loading, scrollToBottom]);
 
   // Force regular refresh of messages in addition to real-time
   useEffect(() => {
@@ -96,9 +116,16 @@ export const useMessages = (chatId: string | null, userId: string) => {
         lastMessageTimeRef.current = new Date(newestMsg.created_at);
         
         // Add and sort messages
-        return [...prev, ...uniqueNew].sort(
+        const updatedMessages = [...prev, ...uniqueNew].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
+        
+        // Schedule a scroll to bottom
+        if (uniqueNew.length > 0) {
+          setTimeout(() => scrollToBottom(), 100);
+        }
+        
+        return updatedMessages;
       });
       
       // Mark messages as read
@@ -293,6 +320,9 @@ export const useMessages = (chatId: string | null, userId: string) => {
 
       // Add optimistic message to state
       setMessages(prev => [...prev, optimisticMessage]);
+      
+      // Scroll to bottom immediately for this user's message
+      setTimeout(() => scrollToBottom(), 100);
 
       // Insert message into database
       const { data: messageData, error: insertError } = await supabase
@@ -354,7 +384,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
       );
       throw err;
     }
-  }, [userId]);
+  }, [userId, scrollToBottom]);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
@@ -453,6 +483,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
     hasMore,
     sendMessage,
     loadMore,
-    fetchMessages
+    fetchMessages,
+    scrollToBottom
   };
 }; 
