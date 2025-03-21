@@ -11,9 +11,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const messagesPerPage = 50;
-  
-  // Direct reference to the subscription
-  const supabaseChannel = useRef<any>(null);
+  const channelRef = useRef<any>(null);
 
   const fetchMessages = useCallback(async (pageNum: number = 1) => {
     if (!chatId) return;
@@ -250,201 +248,115 @@ export const useMessages = (chatId: string | null, userId: string) => {
     }
   }, [loading, hasMore, page, fetchMessages]);
 
-  // Function to create a new message object from payload
-  const createMessageFromPayload = async (payload: any) => {
-    try {
-      if (!payload || !payload.new) {
-        console.error('Invalid payload received:', payload);
-        return null;
-      }
-      
-      // Get the sender profile
-      const { data: sender, error: senderError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .eq('id', payload.new.sender_id)
-        .single();
-        
-      if (senderError) {
-        console.error('Error fetching sender:', senderError);
-        return null;
-      }
-      
-      // Create new message object
-      const newMessage: Message = {
-        id: payload.new.id,
-        chat_id: payload.new.chat_id,
-        sender_id: payload.new.sender_id,
-        content: payload.new.content,
-        content_type: payload.new.content_type || 'text',
-        status: payload.new.status || 'sent',
-        created_at: payload.new.created_at,
-        read_at: payload.new.read_at || null,
-        reply_to_id: payload.new.reply_to_id,
-        sender: {
-          id: sender.id,
-          username: sender.username,
-          avatar_url: sender.avatar_url
-        },
-        reactions: []
-      };
-      
-      // If there's a reply_to_id, fetch the replied message
-      if (payload.new.reply_to_id) {
-        const { data: replyMessage, error: replyError } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('id', payload.new.reply_to_id)
-          .single();
-          
-        if (!replyError && replyMessage) {
-          const { data: replySender } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url')
-            .eq('id', replyMessage.sender_id)
-            .single();
-            
-          if (replySender) {
-            newMessage.reply_to = {
-              ...replyMessage,
-              sender: {
-                id: replySender.id,
-                username: replySender.username,
-                avatar_url: replySender.avatar_url
-              },
-              reactions: []
-            } as Message;
-          }
-        }
-      }
-      
-      return newMessage;
-    } catch (err) {
-      console.error('Error creating message from payload:', err);
-      return null;
-    }
-  };
-
-  // Handle realtime messages
+  // Handle real-time updates - SIMPLIFIED IMPLEMENTATION
   useEffect(() => {
     if (!chatId) return;
-
-    console.log(`Setting up realtime for chat: ${chatId}`);
     
-    // Reset state when chat changes
+    console.log(`Setting up real-time for chat ${chatId}`);
     setMessages([]);
-    setPage(1);
-    setHasMore(true);
     fetchMessages(1);
     
-    // Clean up previous subscription
-    if (supabaseChannel.current) {
+    // Clean up any existing subscription
+    if (channelRef.current) {
       console.log('Cleaning up previous subscription');
-      supabase.removeChannel(supabaseChannel.current);
-      supabaseChannel.current = null;
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
     
-    // Create a stable channel name for this chat
-    const channelName = `chat:${chatId}`;
-    
-    // Set up the channel
-    const channel = supabase.channel(channelName, {
-      config: {
-        broadcast: { self: true },
-        presence: { key: userId },
+    // Use a more direct and simple subscription
+    const channel = supabase.channel(`chat-${chatId}-${Date.now()}`, {
+      config: { 
+        broadcast: { self: false }
       }
     });
     
-    // Listen for INSERT events
-    channel.on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'messages',
-      filter: `chat_id=eq.${chatId}`
-    }, async (payload) => {
-      console.log('INSERT event received:', payload);
-      
-      // Don't add your own messages (handled by optimistic updates)
-      if (payload.new.sender_id === userId) {
-        console.log('Skipping own message from realtime update');
-        return;
-      }
-      
-      const newMessage = await createMessageFromPayload(payload);
-      if (!newMessage) return;
-      
-      // Update messages state
-      setMessages(prev => {
-        // Check if message already exists
-        if (prev.some(msg => msg.id === newMessage.id)) {
-          console.log('Message already exists, not adding duplicate');
-          return prev;
+    // Complete message handler (processes raw message data and adds to state)
+    const processNewMessage = async (payload: any) => {
+      try {
+        console.log('Received new message payload:', payload);
+        
+        // Skip messages from self (already handled by optimistic updates)
+        if (payload.new.sender_id === userId) {
+          console.log('Skipping message from self');
+          return;
         }
         
-        console.log('Adding new message to state:', newMessage);
-        const updated = [...prev, newMessage].sort((a, b) => 
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-        return updated;
-      });
-      
-      // Mark as read
-      if (newMessage.sender_id !== userId) {
-        supabase
+        // Fetch sender profile for this message
+        const { data: senderData } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .eq('id', payload.new.sender_id)
+          .single();
+        
+        if (!senderData) {
+          console.error('Could not find sender profile');
+          return;
+        }
+        
+        // Construct full message
+        const newMsg: DatabaseMessage = {
+          ...payload.new,
+          sender: {
+            id: senderData.id,
+            username: senderData.username,
+            avatar_url: senderData.avatar_url
+          },
+          reactions: []
+        };
+        
+        // Validate and add to message list
+        const validatedMsg = validateMessage(newMsg);
+        console.log('Adding new message to state:', validatedMsg);
+        
+        setMessages(prev => {
+          // Check if message already exists to prevent duplicates
+          if (prev.some(m => m.id === validatedMsg.id)) {
+            return prev;
+          }
+          
+          // Add and sort messages
+          const updated = [...prev, validatedMsg].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+          return updated;
+        });
+        
+        // Mark as read
+        await supabase
           .from('messages')
           .update({ read_at: new Date().toISOString() })
-          .eq('id', newMessage.id)
-          .then(({ error }) => {
-            if (error) console.error('Error marking message as read:', error);
-          });
+          .eq('id', payload.new.id);
+          
+      } catch (err) {
+        console.error('Error processing new message:', err);
       }
-    });
+    };
     
-    // Listen for UPDATE events
-    channel.on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'messages',
-      filter: `chat_id=eq.${chatId}`
-    }, async (payload) => {
-      console.log('UPDATE event received:', payload);
+    // Subscribe to message inserts
+    channel
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`
+      }, processNewMessage)
+      .subscribe((status, err) => {
+        console.log(`Subscription status: ${status}`, err || '');
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to real-time messages');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Error subscribing to real-time messages:', err);
+          setError('Failed to connect to real-time messages');
+        }
+      });
       
-      setMessages(prev => 
-        prev.map(msg => {
-          if (msg.id === payload.new.id) {
-            return { ...msg, ...payload.new, sender: msg.sender };
-          }
-          return msg;
-        })
-      );
-    });
+    channelRef.current = channel;
     
-    // Listen for DELETE events
-    channel.on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'messages',
-      filter: `chat_id=eq.${chatId}`
-    }, async (payload) => {
-      console.log('DELETE event received:', payload);
-      
-      setMessages(prev => prev.filter(msg => msg.id !== payload.old.id));
-    });
-    
-    // Subscribe to the channel
-    channel.subscribe((status) => {
-      console.log(`Channel ${channelName} status:`, status);
-    });
-    
-    // Store the channel for cleanup
-    supabaseChannel.current = channel;
-    
-    // Cleanup function
     return () => {
-      console.log(`Cleaning up channel for chat: ${chatId}`);
-      if (supabaseChannel.current) {
-        supabase.removeChannel(supabaseChannel.current);
-        supabaseChannel.current = null;
+      console.log('Cleaning up real-time subscription');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, [chatId, userId, fetchMessages]);
