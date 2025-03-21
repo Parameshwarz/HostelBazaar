@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Message } from '../../types';
 import { DatabaseMessage, MessageStatus } from './chatTypes';
@@ -11,6 +11,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const messagesPerPage = 50;
+  const subscriptionRef = useRef<any>(null);
 
   const fetchMessages = useCallback(async (pageNum: number = 1) => {
     if (!chatId) return;
@@ -255,73 +256,129 @@ export const useMessages = (chatId: string | null, userId: string) => {
       setHasMore(true);
       fetchMessages(1);
       
+      // Clean up any existing subscription
+      if (subscriptionRef.current) {
+        console.log('Cleaning up previous subscription');
+        subscriptionRef.current.unsubscribe();
+      }
+      
       // Set up real-time subscription for new messages
-      const subscription = supabase
-        .channel(`messages-${chatId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${chatId}`
-          },
-          async (payload) => {
-            console.log('Message subscription event:', payload);
-            
-            if (payload.eventType === 'INSERT') {
+      console.log(`Setting up new subscription for chat: ${chatId}`);
+      const channelName = `messages-${chatId}-${new Date().getTime()}`;
+      
+      try {
+        const subscription = supabase
+          .channel(channelName)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'messages',
+              filter: `chat_id=eq.${chatId}`
+            },
+            async (payload) => {
+              console.log('Message INSERT event received:', payload);
+              
               // Skip messages sent by the current user (already handled by optimistic updates)
-              if (payload.new.sender_id === userId) return;
-              
-              // Fetch the complete message with sender info
-              const { data: messageData, error: msgError } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('id', payload.new.id)
-                .single();
-                
-              if (msgError) {
-                console.error('Error fetching new message details:', msgError);
+              if (payload.new.sender_id === userId) {
+                console.log('Skipping own message');
                 return;
               }
               
-              // Fetch sender profile
-              const { data: senderProfile, error: profileError } = await supabase
-                .from('profiles')
-                .select('id, username, avatar_url')
-                .eq('id', messageData.sender_id)
-                .single();
+              try {
+                // Fetch the complete message with sender info
+                console.log(`Fetching message details for ID: ${payload.new.id}`);
+                const { data: messageData, error: msgError } = await supabase
+                  .from('messages')
+                  .select('*')
+                  .eq('id', payload.new.id)
+                  .single();
+                  
+                if (msgError) {
+                  console.error('Error fetching new message details:', msgError);
+                  return;
+                }
                 
-              if (profileError) {
-                console.error('Error fetching sender profile:', profileError);
-                return;
-              }
-              
-              // Create complete message object
-              const newMessage = {
-                ...messageData,
-                sender: {
-                  id: senderProfile.id,
-                  username: senderProfile.username,
-                  avatar_url: senderProfile.avatar_url
-                },
-                reactions: []
-              };
-              
-              // Add to messages
-              setMessages(prev => [...prev, validateMessage(newMessage as DatabaseMessage)]);
-              
-              // Mark as read immediately
-              if (newMessage.sender_id !== userId) {
-                supabase
+                if (!messageData) {
+                  console.error('No message data returned');
+                  return;
+                }
+                
+                console.log('Message data retrieved:', messageData);
+                
+                // Fetch sender profile
+                console.log(`Fetching sender profile for ID: ${messageData.sender_id}`);
+                const { data: senderProfile, error: profileError } = await supabase
+                  .from('profiles')
+                  .select('id, username, avatar_url')
+                  .eq('id', messageData.sender_id)
+                  .single();
+                  
+                if (profileError) {
+                  console.error('Error fetching sender profile:', profileError);
+                  return;
+                }
+                
+                if (!senderProfile) {
+                  console.error('No sender profile returned');
+                  return;
+                }
+                
+                console.log('Sender profile retrieved:', senderProfile);
+                
+                // Create complete message object
+                const newMessage = {
+                  ...messageData,
+                  sender: {
+                    id: senderProfile.id,
+                    username: senderProfile.username,
+                    avatar_url: senderProfile.avatar_url
+                  },
+                  reactions: []
+                };
+                
+                console.log('Adding new message to state:', newMessage);
+                
+                // Add to messages
+                setMessages(prev => {
+                  // Check if message already exists in state
+                  const exists = prev.some(msg => msg.id === newMessage.id);
+                  if (exists) {
+                    console.log('Message already exists in state, not adding duplicate');
+                    return prev;
+                  }
+                  const updatedMessages = [...prev, validateMessage(newMessage as DatabaseMessage)];
+                  console.log('Updated messages state:', updatedMessages);
+                  return updatedMessages;
+                });
+                
+                // Mark as read immediately
+                console.log('Marking message as read');
+                const { error: updateError } = await supabase
                   .from('messages')
                   .update({ read_at: new Date().toISOString() })
-                  .eq('id', newMessage.id)
-                  .then(({ error }) => {
-                    if (error) console.error('Error marking message as read:', error);
-                  });
+                  .eq('id', newMessage.id);
+                  
+                if (updateError) {
+                  console.error('Error marking message as read:', updateError);
+                }
+              } catch (err) {
+                console.error('Error processing new message:', err);
               }
-            } else if (payload.eventType === 'UPDATE') {
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'messages',
+              filter: `chat_id=eq.${chatId}`
+            },
+            (payload) => {
+              console.log('Message UPDATE event received:', payload);
+              
               // Handle message updates (reactions, read status, etc.)
               setMessages(prev => 
                 prev.map(msg => 
@@ -332,17 +389,47 @@ export const useMessages = (chatId: string | null, userId: string) => {
                   } : msg
                 )
               );
-            } else if (payload.eventType === 'DELETE') {
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'DELETE',
+              schema: 'public',
+              table: 'messages',
+              filter: `chat_id=eq.${chatId}`
+            },
+            (payload) => {
+              console.log('Message DELETE event received:', payload);
+              
               // Handle message deletion
               setMessages(prev => prev.filter(msg => msg.id !== payload.old.id));
             }
-          }
-        )
-        .subscribe();
+          )
+          .subscribe((status) => {
+            console.log(`Subscription status for ${channelName}:`, status);
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully subscribed to real-time messages');
+            } else if (status === 'CHANNEL_ERROR') {
+              console.error('Error subscribing to real-time messages');
+              setError('Failed to connect to real-time messages');
+            }
+          });
         
+        console.log('Subscription created and stored in ref');
+        subscriptionRef.current = subscription;
+      } catch (err) {
+        console.error('Error setting up message subscription:', err);
+        setError('Failed to connect to real-time messages');
+      }
+      
       // Clean up subscription when chat changes or component unmounts
       return () => {
-        subscription.unsubscribe();
+        console.log('Cleaning up subscription on unmount/change');
+        if (subscriptionRef.current) {
+          subscriptionRef.current.unsubscribe();
+          subscriptionRef.current = null;
+        }
       };
     }
   }, [chatId, fetchMessages, userId]);
