@@ -86,11 +86,16 @@ export interface Chat {
   id: string;
   participant_1: string;
   participant_2: string;
-  item_id?: string;
-  last_message?: string;
-  last_message_at?: string;
   created_at: string;
   updated_at: string;
+  last_message: string;
+  last_message_at: string;
+  other_user: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+    last_seen: string | null;
+  };
   status?: 'active' | 'archived' | 'blocked';
   is_pinned?: boolean;
   meeting_scheduled?: boolean;
@@ -98,13 +103,6 @@ export interface Chat {
   deal_completed?: boolean;
   is_blocked?: boolean;
   is_muted?: boolean;
-  other_user?: {
-    id: string;
-    username: string;
-    avatar_url: string | null;
-    last_seen?: string;
-    trust_score?: number;
-  };
 }
 
 // User Types

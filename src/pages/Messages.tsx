@@ -31,7 +31,7 @@ export const Messages = () => {
     createChat,
     updateChatStatus,
     fetchChats
-  } = useChat(user?.id || '');
+  } = useChat();
 
   const {
     messages,
@@ -142,7 +142,7 @@ export const Messages = () => {
               onReply={(message) => setReplyingTo(message)}
               onCancelReply={() => setReplyingTo(null)}
               replyTo={replyingTo}
-              disabled={selectedChat.status !== 'active'}
+              disabled={false}
             />
             
             {/* Deal progress component if needed */}
