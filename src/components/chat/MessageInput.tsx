@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../../types';
 import { isValidMessageContent } from './messageUtils';
-import { useTyping } from '../../hooks/useTyping';
 
 interface MessageInputProps {
   onSendMessage: (content: string) => Promise<void>;
@@ -9,8 +8,8 @@ interface MessageInputProps {
   onCancelReply?: () => void;
   replyTo?: Message | null;
   disabled?: boolean;
-  chatId: string | null;
-  userId: string;
+  onTyping?: () => void;
+  typingUsers?: { userId: string; username: string; isTyping: boolean }[];
 }
 
 const MessageInput: React.FC<MessageInputProps> = ({
@@ -19,13 +18,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
   onCancelReply,
   replyTo,
   disabled = false,
-  chatId,
-  userId
+  onTyping,
+  typingUsers = []
 }) => {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { setUserTyping } = useTyping(chatId, userId);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -60,75 +58,97 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
-    setUserTyping(); // Trigger typing indicator
+    
+    if (onTyping && e.target.value.trim()) {
+      onTyping();
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4">
-      {replyTo && (
-        <div className="flex items-center justify-between mb-2 bg-gray-50 p-2 rounded">
-          <div className="flex items-center">
-            <span className="text-sm text-gray-600">Replying to:</span>
-            <span className="ml-2 text-sm font-medium text-gray-900">
-              {replyTo.sender.username}
+    <div>
+      {typingUsers && typingUsers.length > 0 && (
+        <div className="px-4 pb-2">
+          <div className="text-xs text-gray-500 flex items-center">
+            <span className="font-medium mr-1">
+              {typingUsers.length === 1
+                ? `${typingUsers[0].username} is typing`
+                : `${typingUsers.length} people are typing`}
+            </span>
+            <span className="inline-flex">
+              <span className="animate-bounce mx-0.5">.</span>
+              <span className="animate-bounce animation-delay-200 mx-0.5">.</span>
+              <span className="animate-bounce animation-delay-400 mx-0.5">.</span>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={onCancelReply}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        </div>
+      )}
+      
+      <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4">
+        {replyTo && (
+          <div className="flex items-center justify-between mb-2 bg-gray-50 p-2 rounded">
+            <div className="flex items-center">
+              <span className="text-sm text-gray-600">Replying to:</span>
+              <span className="ml-2 text-sm font-medium text-gray-900">
+                {replyTo.sender.username}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="text-gray-500 hover:text-gray-700"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        )}
+        <div className="flex items-end space-x-2">
+          <div className="flex-1">
+            <textarea
+              ref={textareaRef}
+              value={message}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message..."
+              className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              rows={1}
+              disabled={disabled}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!message.trim() || isSending || disabled}
+            className={`px-4 py-2 rounded-lg ${
+              !message.trim() || isSending || disabled
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-blue-500 hover:bg-blue-600'
+            } text-white font-medium`}
+          >
+            {isSending ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              'Send'
+            )}
           </button>
         </div>
-      )}
-      <div className="flex items-end space-x-2">
-        <div className="flex-1">
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            rows={1}
-            disabled={disabled}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={!message.trim() || isSending || disabled}
-          className={`px-4 py-2 rounded-lg ${
-            !message.trim() || isSending || disabled
-              ? 'bg-gray-300 cursor-not-allowed'
-              : 'bg-blue-500 hover:bg-blue-600'
-          } text-white font-medium`}
-        >
-          {isSending ? (
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            'Send'
-          )}
-        </button>
-      </div>
-      {message.length > 0 && !isValidMessageContent(message) && (
-        <p className="mt-1 text-sm text-red-500">
-          Message must be between 2 and 1000 characters
-        </p>
-      )}
-    </form>
+        {message.length > 0 && !isValidMessageContent(message) && (
+          <p className="mt-1 text-sm text-red-500">
+            Message must be between 2 and 1000 characters
+          </p>
+        )}
+      </form>
+    </div>
   );
 };
 
