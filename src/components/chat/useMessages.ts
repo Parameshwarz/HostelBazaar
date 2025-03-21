@@ -210,8 +210,7 @@ export const useMessages = (chatId: string | null, userId: string) => {
         .from('chats')
         .update({
           last_message: content,
-          last_message_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          last_message_at: new Date().toISOString()
         })
         .eq('id', chatId);
 

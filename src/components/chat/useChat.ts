@@ -24,7 +24,7 @@ export const useChat = () => {
         .from('chats')
         .select('*')
         .or('participant_1.eq.' + user.id + ',participant_2.eq.' + user.id)
-        .order('updated_at', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (chatsError) {
         console.error('Error fetching chats:', chatsError);
@@ -69,9 +69,9 @@ export const useChat = () => {
           participant_1: chat.participant_1,
           participant_2: chat.participant_2,
           created_at: chat.created_at,
-          updated_at: chat.updated_at,
+          updated_at: chat.created_at,
           last_message: chat.last_message || '',
-          last_message_at: chat.last_message_at || chat.updated_at,
+          last_message_at: chat.last_message_at || chat.created_at,
           other_user: {
             id: otherUser?.id || '',
             username: otherUser?.username || 'Unknown User',
@@ -135,6 +135,7 @@ export const useChat = () => {
                 .then(otherUser => {
                   const chatWithUser: Chat = {
                     ...newChat,
+                    updated_at: newChat.created_at,
                     other_user: otherUser || {
                       id: '',
                       username: 'Unknown User',
@@ -147,12 +148,20 @@ export const useChat = () => {
             } else if (payload.eventType === 'UPDATE') {
               const updatedChat = payload.new as any;
               setChats(prev => prev.map(chat => 
-                chat.id === updatedChat.id ? { ...chat, ...updatedChat } : chat
+                chat.id === updatedChat.id ? { 
+                  ...chat, 
+                  ...updatedChat,
+                  updated_at: updatedChat.created_at
+                } : chat
               ));
               
               // Update selected chat if needed
               if (selectedChat?.id === updatedChat.id) {
-                setSelectedChat(prev => prev ? { ...prev, ...updatedChat } : null);
+                setSelectedChat(prev => prev ? { 
+                  ...prev, 
+                  ...updatedChat,
+                  updated_at: updatedChat.created_at
+                } : null);
               }
             } else if (payload.eventType === 'DELETE') {
               const deletedChatId = payload.old.id;
@@ -225,8 +234,7 @@ export const useChat = () => {
           participant_1: user.id,
           participant_2: otherUserId,
           status: 'active',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          created_at: new Date().toISOString()
         })
         .select()
         .single();
@@ -249,8 +257,7 @@ export const useChat = () => {
       console.log('Updating chat status:', chatId, status);
       
       const updates: any = { 
-        status,
-        updated_at: new Date().toISOString()
+        status
       };
       
       if (status === 'blocked') {
