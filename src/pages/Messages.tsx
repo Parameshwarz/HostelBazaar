@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Message, Chat } from '../types';
 import { useChat } from '../components/chat/useChat';
 import { useMessages } from '../components/chat/useMessages';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import ChatHeader from '../components/chat/ChatHeader';
 import ChatSidebar from '../components/chat/ChatSidebar';
 import MessageList from '../components/chat/MessageList';
@@ -21,6 +22,9 @@ export const Messages = () => {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Initialize online status tracking
+  const { isOnline } = useOnlineStatus(user?.id || '');
   
   const {
     chats,
@@ -46,7 +50,7 @@ export const Messages = () => {
   // Initialize chat and fetch messages when component mounts
   useEffect(() => {
     if (user) {
-      fetchChats();
+    fetchChats();
     }
   }, [user, fetchChats]);
 
@@ -70,7 +74,7 @@ export const Messages = () => {
 
   const handleSendMessage = async (content: string) => {
     if (!selectedChat || !user) return;
-    
+
     try {
       setSendingMessage(true);
       await sendMessage(content, selectedChat.id);
@@ -127,6 +131,7 @@ export const Messages = () => {
               onArchive={handleArchiveChat}
               onBlock={handleBlockUser}
               onUnblock={handleUnblockChat}
+              userId={user?.id || ''}
             />
             <MessageList
               messages={messages}
@@ -143,27 +148,29 @@ export const Messages = () => {
               onCancelReply={() => setReplyingTo(null)}
               replyTo={replyingTo}
               disabled={false}
+              chatId={selectedChat.id}
+              userId={user?.id || ''}
             />
             
             {/* Deal progress component if needed */}
-            <AnimatePresence>
-              {showDealProgress && dealStatus && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <DealProgress {...dealStatus} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                <AnimatePresence>
+                  {showDealProgress && dealStatus && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <DealProgress {...dealStatus} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500">Select a chat to start messaging</p>
-          </div>
+              </div>
         )}
       </div>
     </div>

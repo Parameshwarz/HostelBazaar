@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../../types';
 import { isValidMessageContent } from './messageUtils';
+import { useTyping } from '../../hooks/useTyping';
 
 interface MessageInputProps {
   onSendMessage: (content: string) => Promise<void>;
@@ -8,6 +9,8 @@ interface MessageInputProps {
   onCancelReply?: () => void;
   replyTo?: Message | null;
   disabled?: boolean;
+  chatId: string | null;
+  userId: string;
 }
 
 const MessageInput: React.FC<MessageInputProps> = ({
@@ -15,11 +18,14 @@ const MessageInput: React.FC<MessageInputProps> = ({
   onReply,
   onCancelReply,
   replyTo,
-  disabled = false
+  disabled = false,
+  chatId,
+  userId
 }) => {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { setUserTyping } = useTyping(chatId, userId);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -50,6 +56,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
       e.preventDefault();
       handleSubmit(e);
     }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+    setUserTyping(); // Trigger typing indicator
   };
 
   return (
@@ -88,7 +99,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"

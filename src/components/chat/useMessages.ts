@@ -254,8 +254,62 @@ export const useMessages = (chatId: string | null, userId: string) => {
       setPage(1);
       setHasMore(true);
       fetchMessages(1);
+      
+      // Real-time subscription for new messages
+      const subscription = supabase
+        .channel(`messages:${chatId}`)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`
+        }, async (payload) => {
+          console.log('New message received:', payload);
+          const newMessage = payload.new as DatabaseMessage;
+          
+          // Skip own messages (already handled by optimistic update)
+          if (newMessage.sender_id === userId) return;
+          
+          // Fetch sender profile
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .eq('id', newMessage.sender_id)
+            .single();
+            
+          // Create a proper message object with sender info
+          const messageWithSender = {
+            ...newMessage,
+            sender: senderProfile ? {
+              id: senderProfile.id,
+              username: senderProfile.username,
+              avatar_url: senderProfile.avatar_url
+            } : {
+              id: newMessage.sender_id,
+              username: 'Unknown User',
+              avatar_url: null
+            },
+            reactions: []
+          };
+          
+          // Add to messages state
+          setMessages(prev => [...prev, validateMessage(messageWithSender as DatabaseMessage)]);
+          
+          // Mark as read immediately
+          if (newMessage.sender_id !== userId) {
+            await supabase
+              .from('messages')
+              .update({ read_at: new Date().toISOString() })
+              .eq('id', newMessage.id);
+          }
+        })
+        .subscribe();
+        
+      return () => {
+        subscription.unsubscribe();
+      };
     }
-  }, [chatId, fetchMessages]);
+  }, [chatId, fetchMessages, userId]);
 
   return {
     messages,

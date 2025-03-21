@@ -1,5 +1,6 @@
 import React from 'react';
 import { Chat } from '../../types';
+import { useTyping } from '../../hooks/useTyping';
 
 interface ChatHeaderProps {
   chat: Chat | null;
@@ -7,6 +8,7 @@ interface ChatHeaderProps {
   onArchive: () => Promise<void>;
   onBlock: () => Promise<void>;
   onUnblock: () => Promise<void>;
+  userId: string;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -14,8 +16,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onBack,
   onArchive,
   onBlock,
-  onUnblock
+  onUnblock,
+  userId
 }) => {
+  const { otherUserTyping } = useTyping(chat?.id || null, userId);
+
   if (!chat) {
     return (
       <div className="h-16 border-b flex items-center justify-center">
@@ -49,10 +54,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         <div>
           <h2 className="font-semibold">{chat.other_user?.username || 'Unknown User'}</h2>
           <p className="text-sm text-gray-500">
-            {chat.other_user?.last_seen && 
-              new Date(chat.other_user.last_seen).getTime() > Date.now() - 5 * 60 * 1000 
-              ? 'Online' 
-              : 'Offline'}
+            {otherUserTyping ? (
+              <span className="text-blue-500 font-medium">Typing...</span>
+            ) : chat.other_user?.last_seen && 
+              new Date(chat.other_user.last_seen).getTime() > Date.now() - 5 * 60 * 1000 ? (
+              'Online'
+            ) : (
+              'Offline'
+            )}
           </p>
         </div>
       </div>
