@@ -1,4 +1,5 @@
-import { Message, DatabaseMessage } from '../../types';
+import { Message } from '../../types';
+import { DatabaseMessage } from './chatTypes';
 
 // Message validation constants
 export const MIN_MESSAGE_LENGTH = 2;

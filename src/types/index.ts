@@ -67,11 +67,10 @@ export interface DatabaseMessage {
   sender_id: string;
   content: string;
   content_type: 'text' | 'image' | 'file';
-  status: 'sending' | 'sent' | 'delivered' | 'seen' | 'error' | 'deleted';
+  status: MessageStatus;
   created_at: string;
   read_at: string | null;
   reply_to_id: string | null;
-  reply_to?: DatabaseMessage | null;
   sender?: {
     id: string;
     username: string;

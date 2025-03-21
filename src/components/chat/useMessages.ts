@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Message, DatabaseMessage } from '../../types';
+import { Message } from '../../types';
+import { DatabaseMessage, MessageStatus } from './chatTypes';
 import { validateMessage, removeDuplicateMessages } from './messageUtils';
 
 export const useMessages = (chatId: string | null, userId: string) => {
@@ -18,6 +19,8 @@ export const useMessages = (chatId: string | null, userId: string) => {
       setLoading(true);
       setError(null);
 
+      console.log(`Fetching messages for chat: ${chatId}, page: ${pageNum}`);
+
       // First fetch messages
       const { data: messagesData, error: messagesError } = await supabase
         .from('messages')
@@ -26,10 +29,19 @@ export const useMessages = (chatId: string | null, userId: string) => {
         .order('created_at', { ascending: false })
         .range((pageNum - 1) * messagesPerPage, pageNum * messagesPerPage - 1);
 
-      if (messagesError) throw messagesError;
+      if (messagesError) {
+        console.error('Error fetching messages:', messagesError);
+        throw messagesError;
+      }
 
-      if (!messagesData) {
-        setMessages([]);
+      console.log(`Retrieved ${messagesData?.length || 0} messages`);
+
+      if (!messagesData || messagesData.length === 0) {
+        if (pageNum === 1) {
+          setMessages([]);
+        }
+        setHasMore(false);
+        setLoading(false);
         return;
       }
 
@@ -39,13 +51,18 @@ export const useMessages = (chatId: string | null, userId: string) => {
         .map(msg => msg.reply_to_id)
         .filter((id): id is string => id !== null);
 
+      console.log(`Fetching ${senderIds.size} sender profiles`);
+
       // Fetch sender profiles
       const { data: senderProfiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, username, avatar_url')
         .in('id', Array.from(senderIds));
 
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        throw profilesError;
+      }
 
       // Create a map of profiles
       const profilesMap = new Map(senderProfiles?.map(p => [p.id, p]) || []);
@@ -53,10 +70,16 @@ export const useMessages = (chatId: string | null, userId: string) => {
       // Fetch reply messages if any
       let replyMessages: Message[] = [];
       if (replyToIds.length > 0) {
-        const { data: replyData } = await supabase
+        console.log(`Fetching ${replyToIds.length} reply messages`);
+        
+        const { data: replyData, error: replyError } = await supabase
           .from('messages')
           .select('*')
           .in('id', replyToIds);
+
+        if (replyError) {
+          console.error('Error fetching reply messages:', replyError);
+        }
 
         if (replyData) {
           replyMessages = replyData.map(msg => validateMessage(msg as DatabaseMessage));
@@ -77,7 +100,11 @@ export const useMessages = (chatId: string | null, userId: string) => {
             id: sender.id,
             username: sender.username,
             avatar_url: sender.avatar_url
-          } : undefined,
+          } : {
+            id: msg.sender_id,
+            username: 'Unknown User',
+            avatar_url: null
+          },
           reply_to: replyTo
         };
       });
@@ -88,6 +115,8 @@ export const useMessages = (chatId: string | null, userId: string) => {
       const sortedMessages = uniqueMessages.sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
+
+      console.log(`Processed ${sortedMessages.length} messages for display`);
 
       // Update messages state
       setMessages(prev => {
@@ -107,16 +136,20 @@ export const useMessages = (chatId: string | null, userId: string) => {
       );
 
       if (unreadMessages.length > 0) {
+        console.log(`Marking ${unreadMessages.length} messages as read`);
+        
         const { error: updateError } = await supabase
           .from('messages')
           .update({ read_at: new Date().toISOString() })
           .in('id', unreadMessages.map(msg => msg.id));
 
-        if (updateError) console.error('Error marking messages as read:', updateError);
+        if (updateError) {
+          console.error('Error marking messages as read:', updateError);
+        }
       }
 
     } catch (err) {
-      console.error('Error fetching messages:', err);
+      console.error('Error in fetchMessages:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch messages');
     } finally {
       setLoading(false);
@@ -125,21 +158,27 @@ export const useMessages = (chatId: string | null, userId: string) => {
 
   const sendMessage = useCallback(async (content: string, chatId: string) => {
     try {
+      console.log(`Sending message to chat: ${chatId}`);
+      
       // Create optimistic message
-      const optimisticMessage: Message = {
-        id: `temp-${Date.now()}`,
+      const optimisticId = `temp-${Date.now()}`;
+      const optimisticMessage = {
+        id: optimisticId,
         chat_id: chatId,
         sender_id: userId,
         content,
-        content_type: 'text',
-        status: 'sending',
+        content_type: 'text' as const,
+        status: 'sending' as MessageStatus,
         created_at: new Date().toISOString(),
+        read_at: null,
+        reply_to_id: null,
         sender: {
           id: userId,
           username: 'You',
           avatar_url: null
-        }
-      };
+        },
+        reactions: []
+      } as Message;
 
       // Add optimistic message to state
       setMessages(prev => [...prev, optimisticMessage]);
@@ -159,43 +198,62 @@ export const useMessages = (chatId: string | null, userId: string) => {
         .select()
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Error inserting message:', insertError);
+        throw insertError;
+      }
+
+      console.log('Message sent successfully:', messageData);
 
       // Update chat's last message
       const { error: updateError } = await supabase
         .from('chats')
         .update({
           last_message: content,
-          last_message_at: new Date().toISOString()
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .eq('id', chatId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Error updating chat last message:', updateError);
+      }
 
       // Replace optimistic message with real message
       setMessages(prev => 
         prev.map(msg => 
-          msg.id === optimisticMessage.id ? validateMessage(messageData as DatabaseMessage) : msg
+          msg.id === optimisticId ? validateMessage(messageData as DatabaseMessage) : msg
         )
       );
 
       return messageData;
     } catch (err) {
-      console.error('Error sending message:', err);
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => msg.id !== `temp-${Date.now()}`));
+      console.error('Error in sendMessage:', err);
+      // Update the optimistic message to error state instead of removing it
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id.startsWith('temp-') 
+            ? { ...msg, status: 'error' as const } 
+            : msg
+        )
+      );
       throw err;
     }
   }, [userId]);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
+      console.log(`Loading more messages, page ${page + 1}`);
       fetchMessages(page + 1);
     }
   }, [loading, hasMore, page, fetchMessages]);
 
   useEffect(() => {
     if (chatId) {
+      console.log(`Chat ID changed to ${chatId}, resetting messages`);
+      setMessages([]);
+      setPage(1);
+      setHasMore(true);
       fetchMessages(1);
     }
   }, [chatId, fetchMessages]);

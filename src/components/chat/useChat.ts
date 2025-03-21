@@ -17,14 +17,27 @@ export const useChat = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch chats where user is a participant
+      console.log('Fetching chats for user:', user.id);
+
+      // Fetch chats where user is a participant using the correct filter format
       const { data: chatsData, error: chatsError } = await supabase
         .from('chats')
         .select('*')
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+        .or('participant_1.eq.' + user.id + ',participant_2.eq.' + user.id)
         .order('updated_at', { ascending: false });
 
-      if (chatsError) throw chatsError;
+      if (chatsError) {
+        console.error('Error fetching chats:', chatsError);
+        throw chatsError;
+      }
+
+      console.log('Chats data:', chatsData);
+
+      if (!chatsData || chatsData.length === 0) {
+        setChats([]);
+        setLoading(false);
+        return;
+      }
 
       // Fetch profiles for all participants
       const participantIds = chatsData.flatMap(chat => [
@@ -38,10 +51,13 @@ export const useChat = () => {
         .select('*')
         .in('id', uniqueParticipantIds);
 
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        throw profilesError;
+      }
 
       // Create a map of profiles
-      const profilesMap = new Map(profilesData.map(profile => [profile.id, profile]));
+      const profilesMap = new Map(profilesData?.map(profile => [profile.id, profile]) || []);
 
       // Transform chats data
       const transformedChats: Chat[] = chatsData.map(chat => {
@@ -79,6 +95,7 @@ export const useChat = () => {
         setSelectedChat(transformedChats[0]);
       }
     } catch (err) {
+      console.error('Error in fetchChats:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch chats');
     } finally {
       setLoading(false);
@@ -88,29 +105,64 @@ export const useChat = () => {
   useEffect(() => {
     fetchChats();
 
-    // Subscribe to chat updates
+    // Subscribe to chat updates - only if user exists
+    if (!user) return;
+
     const subscription = supabase
-      .channel('chats')
+      .channel('chats-channel')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'chats',
-          filter: `participant_1=eq.${user?.id},participant_2=eq.${user?.id}`
+          table: 'chats'
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newChat = payload.new as Chat;
-            setChats(prev => [newChat, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedChat = payload.new as Chat;
-            setChats(prev => prev.map(chat => 
-              chat.id === updatedChat.id ? updatedChat : chat
-            ));
-          } else if (payload.eventType === 'DELETE') {
-            const deletedChatId = payload.old.id;
-            setChats(prev => prev.filter(chat => chat.id !== deletedChatId));
+          console.log('Chat subscription event:', payload);
+          
+          // Only process changes for chats the user is part of
+          const chatData = payload.new || payload.old || {};
+          if (chatData && 
+              (typeof chatData === 'object') && 
+              ('participant_1' in chatData) && 
+              ('participant_2' in chatData) &&
+              (chatData.participant_1 === user.id || chatData.participant_2 === user.id)) {
+            
+            if (payload.eventType === 'INSERT') {
+              const newChat = payload.new as any;
+              // Fetch the other user's profile
+              fetchUserProfile(newChat.participant_1 === user.id ? newChat.participant_2 : newChat.participant_1)
+                .then(otherUser => {
+                  const chatWithUser: Chat = {
+                    ...newChat,
+                    other_user: otherUser || {
+                      id: '',
+                      username: 'Unknown User',
+                      avatar_url: null,
+                      last_seen: null
+                    }
+                  };
+                  setChats(prev => [chatWithUser, ...prev]);
+                });
+            } else if (payload.eventType === 'UPDATE') {
+              const updatedChat = payload.new as any;
+              setChats(prev => prev.map(chat => 
+                chat.id === updatedChat.id ? { ...chat, ...updatedChat } : chat
+              ));
+              
+              // Update selected chat if needed
+              if (selectedChat?.id === updatedChat.id) {
+                setSelectedChat(prev => prev ? { ...prev, ...updatedChat } : null);
+              }
+            } else if (payload.eventType === 'DELETE') {
+              const deletedChatId = payload.old.id;
+              setChats(prev => prev.filter(chat => chat.id !== deletedChatId));
+              
+              // Clear selected chat if it was deleted
+              if (selectedChat?.id === deletedChatId) {
+                setSelectedChat(null);
+              }
+            }
           }
         }
       )
@@ -119,21 +171,51 @@ export const useChat = () => {
     return () => {
       subscription.unsubscribe();
     };
-  }, [user, fetchChats]);
+  }, [user, fetchChats, selectedChat]);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+        
+      if (error) throw error;
+      
+      return {
+        id: data.id,
+        username: data.username,
+        avatar_url: data.avatar_url,
+        last_seen: data.last_seen
+      };
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+      return null;
+    }
+  };
 
   const createChat = useCallback(async (otherUserId: string) => {
     if (!user) return null;
     
     try {
-      // Check if chat already exists
-      const { data: existingChat } = await supabase
+      console.log('Creating chat with user:', otherUserId);
+      
+      // Check if chat already exists (corrected format)
+      const { data: existingChats, error: findError } = await supabase
         .from('chats')
         .select('*')
-        .or(`and(participant_1.eq.${user.id},participant_2.eq.${otherUserId}),and(participant_1.eq.${otherUserId},participant_2.eq.${user.id})`)
-        .maybeSingle();
+        .or(`participant_1.eq.${user.id},participant_2.eq.${otherUserId}`)
+        .or(`participant_1.eq.${otherUserId},participant_2.eq.${user.id}`);
 
-      if (existingChat) {
-        return existingChat;
+      if (findError) {
+        console.error('Error finding existing chat:', findError);
+        throw findError;
+      }
+
+      if (existingChats && existingChats.length > 0) {
+        console.log('Chat already exists:', existingChats[0]);
+        return existingChats[0];
       }
 
       // Create new chat
@@ -142,27 +224,38 @@ export const useChat = () => {
         .insert({
           participant_1: user.id,
           participant_2: otherUserId,
-          status: 'active'
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating chat:', error);
+        throw error;
+      }
       
+      console.log('New chat created:', newChat);
       return newChat;
     } catch (err) {
-      console.error('Error creating chat:', err);
+      console.error('Error in createChat:', err);
       throw err;
     }
   }, [user]);
 
   const updateChatStatus = useCallback(async (chatId: string, status: 'active' | 'archived' | 'blocked') => {
     try {
-      const updates: any = { status };
+      console.log('Updating chat status:', chatId, status);
+      
+      const updates: any = { 
+        status,
+        updated_at: new Date().toISOString()
+      };
       
       if (status === 'blocked') {
         updates.is_blocked = true;
-      } else if (status === 'active' && chats.find(c => c.id === chatId)?.is_blocked) {
+      } else if (status === 'active') {
         updates.is_blocked = false;
       }
       
@@ -171,7 +264,10 @@ export const useChat = () => {
         .update(updates)
         .eq('id', chatId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating chat status:', error);
+        throw error;
+      }
       
       // Update local state
       setChats(prev => prev.map(chat => 
@@ -183,10 +279,10 @@ export const useChat = () => {
         setSelectedChat(prev => prev ? { ...prev, ...updates } : null);
       }
     } catch (err) {
-      console.error('Error updating chat status:', err);
+      console.error('Error in updateChatStatus:', err);
       throw err;
     }
-  }, [chats, selectedChat]);
+  }, [selectedChat]);
 
   const blockUser = async (chatId: string) => {
     return updateChatStatus(chatId, 'blocked');
