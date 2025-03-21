@@ -8,7 +8,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Add retry logic
+// Add retry logic and improved realtime config
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -16,5 +16,10 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
   global: {
     headers: { 'x-application-name': 'hostel-bazaar' }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
   }
 });
