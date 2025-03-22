@@ -2,6 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../../types';
 import { isValidMessageContent } from './messageUtils';
 
+// Add CSS for typing indicator animation
+const typingAnimationStyle = `
+  @keyframes bounce-delay {
+    0%, 80%, 100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-5px);
+    }
+  }
+  .typing-dot {
+    animation: bounce-delay 1.4s infinite ease-in-out;
+  }
+`;
+
 interface MessageInputProps {
   onSendMessage: (content: string) => Promise<void>;
   onReply?: (message: Message) => void;
@@ -66,6 +81,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <div>
+      {/* Add style element for typing animation */}
+      <style dangerouslySetInnerHTML={{ __html: typingAnimationStyle }} />
+      
       {typingUsers && typingUsers.length > 0 && (
         <div className="px-4 pb-2">
           <div className="text-xs text-gray-500 flex items-center">
@@ -74,11 +92,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
                 ? `${typingUsers[0].username} is typing`
                 : `${typingUsers.length} people are typing`}
             </span>
-            <span className="inline-flex">
-              <span className="animate-bounce mx-0.5">.</span>
-              <span className="animate-bounce animation-delay-200 mx-0.5">.</span>
-              <span className="animate-bounce animation-delay-400 mx-0.5">.</span>
-            </span>
+            <div className="flex items-end h-5 ml-1">
+              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '0ms' }}></div>
+              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '150ms' }}></div>
+              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '300ms' }}></div>
+            </div>
           </div>
         </div>
       )}
