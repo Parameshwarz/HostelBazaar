@@ -51,12 +51,20 @@ export const Messages = () => {
   // Add typing indicator functionality
   const {
     typingUsers,
-    indicateTyping
+    indicateTyping,
+    setUserTyping
   } = useTyping(
     selectedChat?.id || null,
     user?.id || null,
     user?.user_metadata?.username || 'User'
   );
+
+  // Debug logging for typing users
+  useEffect(() => {
+    if (typingUsers.length > 0) {
+      console.log('TYPING USERS IN MESSAGES COMPONENT:', typingUsers);
+    }
+  }, [typingUsers]);
 
   // Initialize chat and fetch messages when component mounts
   useEffect(() => {
@@ -70,8 +78,13 @@ export const Messages = () => {
     if (selectedChat?.id) {
       fetchMessages(1);
       fetchDealStatus(selectedChat.id);
+      
+      // Set typing to false when changing chats
+      if (setUserTyping) {
+        setUserTyping(false);
+      }
     }
-  }, [selectedChat, fetchMessages]);
+  }, [selectedChat, fetchMessages, setUserTyping]);
 
   // Ensure proper scroll when chat view changes
   useEffect(() => {
@@ -91,10 +104,21 @@ export const Messages = () => {
     });
   };
 
+  // Function to handle typing indication that gets passed to MessageInput
+  const handleTypingIndication = () => {
+    console.log("User is typing - triggering typing indicator");
+    indicateTyping();
+  };
+
   const handleSendMessage = async (content: string) => {
     if (!selectedChat || !user || !content.trim()) return;
     
     try {
+      // When sending message, manually set typing to false
+      if (setUserTyping) {
+        setUserTyping(false);
+      }
+      
       await sendMessage(content, selectedChat.id);
       // Scroll is now handled in the useMessages hook
     } catch (error) {
@@ -194,7 +218,7 @@ export const Messages = () => {
                 onCancelReply={() => setReplyingTo(null)}
                 replyTo={replyingTo}
                 disabled={!selectedChat || selectedChat.is_blocked}
-                onTyping={indicateTyping}
+                onTyping={handleTypingIndication}
                 typingUsers={typingUsers}
               />
             </div>
