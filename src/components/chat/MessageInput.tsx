@@ -50,11 +50,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastTypingTime = useRef<number>(0);
 
   // Log typing users whenever they change
   useEffect(() => {
     if (typingUsers.length > 0) {
-      console.log('TYPING USERS UPDATED:', typingUsers);
+      console.log('TYPING USERS UPDATED in MessageInput:', typingUsers);
     }
   }, [typingUsers]);
 
@@ -92,7 +93,10 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     
-    if (onTyping && e.target.value.trim()) {
+    // Throttle typing events to prevent too many events
+    const now = Date.now();
+    if (onTyping && e.target.value.trim() && now - lastTypingTime.current > 1000) {
+      lastTypingTime.current = now;
       onTyping();
     }
   };

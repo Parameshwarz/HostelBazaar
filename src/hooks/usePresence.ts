@@ -1,147 +1,117 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 export const usePresence = (userId: string | null) => {
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     
-    console.log('Setting up presence tracking for user:', userId);
+    // Use a consistent, global channel for all presence functionality
+    // This ensures all users are in the same channel
+    const PRESENCE_CHANNEL = 'online-users-shared';
     
-    // Create a SHARED channel for all users - this is critical
-    // All users must join the same channel to see each other
-    const channelName = 'online-users-shared';
+    console.log(`Setting up presence channel: ${PRESENCE_CHANNEL} for user ${userId}`);
     
-    const presenceChannel = supabase.channel(channelName, {
-      config: {
-        presence: {
-          key: `user-${userId}`,
-        },
+    const channel = supabase.channel(PRESENCE_CHANNEL);
+    
+    // Handle presence events
+    const handlePresenceState = (state: any) => {
+      console.log('Presence state updated:', state);
+      
+      // Extract all online user IDs from the state object
+      const userIds = Object.keys(state)
+        .filter(key => key.startsWith('user-'))
+        .map(key => {
+          // Extract user ID from key (format: user-{id})
+          const id = key.replace('user-', '');
+          return id;
+        });
+      
+      console.log('Online users ids extracted:', userIds);
+      setOnlineUsers(userIds);
+      setLoading(false);
+    };
+    
+    const handlePresenceJoin = (joinEvent: any) => {
+      const key = Object.keys(joinEvent.presence)[0];
+      console.log('User joined:', key, joinEvent.presence[key]);
+      
+      if (key.startsWith('user-')) {
+        const joinedUserId = key.replace('user-', '');
+        setOnlineUsers(prev => {
+          if (prev.includes(joinedUserId)) return prev;
+          return [...prev, joinedUserId];
+        });
       }
-    });
+    };
     
-    // Track successful subscription
-    let isSubscribed = false;
+    const handlePresenceLeave = (leaveEvent: any) => {
+      const key = Object.keys(leaveEvent.presence)[0];
+      console.log('User left:', key, leaveEvent.presence[key]);
+      
+      if (key.startsWith('user-')) {
+        const leftUserId = key.replace('user-', '');
+        setOnlineUsers(prev => prev.filter(id => id !== leftUserId));
+      }
+    };
     
-    presenceChannel
+    // Update my presence status with more frequent heartbeats
+    const updateMyPresence = () => {
+      channel.track({
+        online_at: new Date().toISOString(),
+        user_id: userId
+      });
+    };
+    
+    // Subscribe to the presence channel
+    channel
       .on('presence', { event: 'sync' }, () => {
-        try {
-          const state = presenceChannel.presenceState();
-          console.log('Presence state updated:', state);
-          
-          // Extract user IDs from presence state - this is the critical part
-          const onlineUserIds = Object.keys(state).map(key => key.replace('user-', ''));
-          console.log('Online users ids extracted:', onlineUserIds);
-          
-          setOnlineUsers(onlineUserIds);
-        } catch (error) {
-          console.error('Error processing presence sync:', error);
-        }
+        const state = channel.presenceState();
+        handlePresenceState(state);
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('User joined:', key, newPresences);
-        
-        // Update online users immediately when someone joins
-        try {
-          const state = presenceChannel.presenceState();
-          const currentOnlineUsers = Object.keys(state).map(key => key.replace('user-', ''));
-          setOnlineUsers(currentOnlineUsers);
-        } catch (error) {
-          console.error('Error processing join event:', error);
-        }
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('User left:', key, leftPresences);
-        
-        // Update online users immediately when someone leaves
-        try {
-          const state = presenceChannel.presenceState();
-          const currentOnlineUsers = Object.keys(state).map(key => key.replace('user-', ''));
-          setOnlineUsers(currentOnlineUsers);
-        } catch (error) {
-          console.error('Error processing leave event:', error);
-        }
-      })
+      .on('presence', { event: 'join' }, handlePresenceJoin)
+      .on('presence', { event: 'leave' }, handlePresenceLeave)
       .subscribe(async (status) => {
-        console.log('Presence channel status:', status);
-        
         if (status === 'SUBSCRIBED') {
-          isSubscribed = true;
+          // Start tracking presence
+          updateMyPresence();
+          console.log('Presence channel subscribed');
           
-          try {
-            // Track the user's presence with their user ID
-            await presenceChannel.track({ 
-              user_id: userId,
-              online_at: new Date().toISOString()
-            });
-            console.log('Successfully tracking presence for user:', userId);
-            
-            // Force an initial sync
-            const state = presenceChannel.presenceState();
-            const currentOnlineUsers = Object.keys(state).map(key => key.replace('user-', ''));
-            setOnlineUsers(currentOnlineUsers);
-          } catch (error) {
-            console.error('Error tracking presence:', error);
-          }
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Presence channel error');
+          // Set up a heartbeat at regular intervals to keep presence active
+          const heartbeatInterval = setInterval(() => {
+            updateMyPresence();
+            console.log('Presence heartbeat sent');
+          }, 15000); // 15 seconds - more frequent for better reliability
+          
+          // Clean up interval on unsubscribe
+          return () => {
+            clearInterval(heartbeatInterval);
+          };
         }
       });
     
-    // Setup heartbeat to keep presence active
-    const heartbeatInterval = setInterval(() => {
-      if (isSubscribed) {
-        presenceChannel.track({ 
-          user_id: userId,
-          online_at: new Date().toISOString() 
-        });
-        console.log('Presence heartbeat sent');
-      }
-    }, 15000); // Send heartbeat every 15 seconds - more frequent updates
-    
-    // Set up event listeners for page visibility changes
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && isSubscribed) {
-        presenceChannel.track({ 
-          user_id: userId,
-          online_at: new Date().toISOString() 
-        });
-        console.log('User became visible, tracking presence again');
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Handle user going offline
-    const handleBeforeUnload = () => {
-      if (isSubscribed) {
-        presenceChannel.untrack();
-      }
-    };
-    
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // Clean up event listeners and subscription
+    // Cleanup function
     return () => {
-      console.log('Cleaning up presence tracking');
-      clearInterval(heartbeatInterval);
-      
-      if (isSubscribed) {
-        presenceChannel.untrack();
-      }
-      
-      supabase.removeChannel(presenceChannel);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      console.log('Cleaning up presence channel');
+      channel.unsubscribe();
     };
   }, [userId]);
   
-  const isUserOnline = (id: string): boolean => {
-    const isOnline = onlineUsers.includes(id);
-    console.log(`Checking if user ${id} is online:`, isOnline, 'Current online users:', onlineUsers);
+  // Function to check if a specific user is online
+  const isUserOnline = useCallback((checkUserId: string) => {
+    const isOnline = onlineUsers.includes(checkUserId);
+    console.log(`Checking if user ${checkUserId} is online:`, isOnline, 'Current online users:', onlineUsers);
     return isOnline;
-  };
+  }, [onlineUsers]);
   
-  return { onlineUsers, isUserOnline };
+  return {
+    onlineUsers,
+    isUserOnline,
+    loading
+  };
 }; 
