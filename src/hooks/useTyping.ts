@@ -244,10 +244,11 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   
   // Function to indicate typing with auto-reset after inactivity
   const indicateTyping = useCallback(() => {
-    // Set typing status to true
-    setUserTyping(true);
-    isActivelyTypingRef.current = true;
-    console.log('[TYPING DEBUG] Called indicateTyping()');
+    // Set typing status to true immediately if not already typing
+    if (!isTyping) {
+      setUserTyping(true);
+      console.log('[TYPING DEBUG] Called indicateTyping() - started typing');
+    }
     
     // Clear existing timeout if any
     if (timeoutRef.current) {
@@ -255,14 +256,12 @@ export const useTyping = (chatId: string | null, userId: string | null, username
     }
     
     // Set timeout to clear typing status after inactivity
+    // WhatsApp style: only show "stopped typing" after sufficient pause
     timeoutRef.current = setTimeout(() => {
-      if (isActivelyTypingRef.current) {
-        setUserTyping(false);
-        isActivelyTypingRef.current = false;
-        timeoutRef.current = null;
-        console.log('[TYPING DEBUG] Auto-reset typing status after timeout');
-      }
-    }, 10000); // Increased from 3000ms to 10000ms (10 seconds)
+      setUserTyping(false);
+      timeoutRef.current = null;
+      console.log('[TYPING DEBUG] Auto-reset typing status after timeout');
+    }, 5000); // Set to 5 seconds - long enough to show the indicator but not too long
     
     // Return cleanup function
     return () => {
@@ -271,7 +270,7 @@ export const useTyping = (chatId: string | null, userId: string | null, username
         timeoutRef.current = null;
       }
     };
-  }, [setUserTyping]);
+  }, [isTyping, setUserTyping]);
   
   return {
     typingUsers,
