@@ -154,17 +154,19 @@ export const Messages = () => {
         {/* Chat Area */}
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           {/* Chat Header */}
-          <ChatHeader
-            chat={selectedChat}
-            onBack={() => setShowSidebar(true)}
-            onArchive={handleArchiveChat}
-            onBlock={handleBlockUser}
-            onUnblock={handleUnblockChat}
-            isUserOnline={selectedChat ? isUserOnline(selectedChat.other_user.id) : false}
-          />
+          <div className="sticky top-0 z-10">
+            <ChatHeader
+              chat={selectedChat}
+              onBack={() => setShowSidebar(true)}
+              onArchive={handleArchiveChat}
+              onBlock={handleBlockUser}
+              onUnblock={handleUnblockChat}
+              isUserOnline={selectedChat ? isUserOnline(selectedChat.other_user.id) : false}
+            />
+          </div>
 
-          {/* Messages Container - Adjusted height with max-height */}
-          <div className="h-[calc(100vh-160px)] overflow-y-auto p-4" ref={messagesContainerRef}>
+          {/* Messages Container - Reduced height to fit both header and input */}
+          <div className="h-[calc(100vh-220px)] overflow-y-auto p-4" ref={messagesContainerRef}>
             {selectedChat ? (
               <MessageList
                 messages={messages}
@@ -183,9 +185,9 @@ export const Messages = () => {
             )}
           </div>
 
-          {/* Message Input - Now will be visible without scrolling */}
+          {/* Message Input - Fixed at bottom */}
           {selectedChat && (
-            <div className="mt-auto">
+            <div className="sticky bottom-0 bg-white border-t">
               <MessageInput
                 onSendMessage={handleSendMessage}
                 onReply={(message) => setReplyingTo(message)}
