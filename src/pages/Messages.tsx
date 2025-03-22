@@ -106,7 +106,7 @@ export const Messages = () => {
 
   // Function to handle typing indication that gets passed to MessageInput
   const handleTypingIndication = () => {
-    console.log("User is typing - triggering typing indicator");
+    console.log("[TYPING DEBUG] User is typing - triggering typing indicator");
     indicateTyping();
   };
 
@@ -189,6 +189,16 @@ export const Messages = () => {
             />
           </div>
 
+          {/* Debug info for typing users - only in development */}
+          {process.env.NODE_ENV === 'development' && typingUsers.length > 0 && (
+            <div className="bg-yellow-50 text-xs p-2 border-b border-yellow-200">
+              <p className="font-medium">Debug: Typing Users</p>
+              <pre className="overflow-x-auto">
+                {JSON.stringify(typingUsers, null, 2)}
+              </pre>
+            </div>
+          )}
+
           {/* Messages Container - Reduced height to fit both header and input */}
           <div className="h-[calc(100vh-220px)] overflow-y-auto p-4" ref={messagesContainerRef}>
             {selectedChat ? (
@@ -211,7 +221,7 @@ export const Messages = () => {
 
           {/* Message Input - Fixed at bottom */}
           {selectedChat && (
-            <div className="sticky bottom-0 bg-white border-t">
+            <div className="sticky bottom-0 bg-white border-t z-20">
               <MessageInput
                 onSendMessage={handleSendMessage}
                 onReply={(message) => setReplyingTo(message)}
@@ -219,7 +229,10 @@ export const Messages = () => {
                 replyTo={replyingTo}
                 disabled={!selectedChat || selectedChat.is_blocked}
                 onTyping={handleTypingIndication}
-                typingUsers={typingUsers}
+                typingUsers={typingUsers.filter(user => 
+                  // Only show typing users who aren't the current user
+                  user.userId !== user?.id && user.isTyping
+                )}
               />
             </div>
           )}

@@ -2,14 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../../types';
 import { isValidMessageContent } from './messageUtils';
 
-// Add CSS for typing indicator animation
+// Enhanced CSS for typing indicator animation - make it more visible
 const typingAnimationStyle = `
   @keyframes bounce-delay {
     0%, 80%, 100% {
       transform: translateY(0);
     }
     40% {
-      transform: translateY(-5px);
+      transform: translateY(-6px);
     }
   }
   .typing-dot {
@@ -17,14 +17,22 @@ const typingAnimationStyle = `
     display: inline-block;
   }
   .typing-indicator {
-    background-color: #f3f4f6;
+    background-color: #e0e7ff;
     border-radius: 16px;
-    padding: 6px 12px;
-    margin-bottom: 8px;
+    padding: 8px 14px;
+    margin-bottom: 12px;
     display: inline-flex;
     align-items: center;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    max-width: 200px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    max-width: 250px;
+    border: 1px solid #c7d2fe;
+  }
+  .typing-dot {
+    height: 8px !important;
+    width: 8px !important;
+    background-color: #6366f1 !important;
+    margin: 0 2px !important;
+    border-radius: 50% !important;
   }
 `;
 
@@ -52,10 +60,14 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingTime = useRef<number>(0);
 
-  // Log typing users whenever they change
+  // Enhanced logging for typing users
   useEffect(() => {
+    console.log('[TYPING INDICATOR] Current typing users:', typingUsers);
+    
     if (typingUsers.length > 0) {
-      console.log('TYPING USERS UPDATED in MessageInput:', typingUsers);
+      console.log('[TYPING INDICATOR] Users are typing:', typingUsers.map(u => u.username).join(', '));
+    } else {
+      console.log('[TYPING INDICATOR] No users are typing');
     }
   }, [typingUsers]);
 
@@ -93,13 +105,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     
-    // Throttle typing events to prevent too many events
+    // Improved throttling for typing events
     const now = Date.now();
     if (onTyping && e.target.value.trim() && now - lastTypingTime.current > 1000) {
+      console.log('[TYPING INDICATOR] Triggering typing event');
       lastTypingTime.current = now;
       onTyping();
     }
   };
+
+  // Check if typing indicator should be shown
+  const shouldShowTypingIndicator = typingUsers && typingUsers.length > 0;
+  console.log('[TYPING INDICATOR] Should show indicator:', shouldShowTypingIndicator);
 
   return (
     <div>
@@ -107,18 +124,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
       <style dangerouslySetInnerHTML={{ __html: typingAnimationStyle }} />
       
       {/* Enhanced typing indicator - more visible and properly positioned */}
-      {typingUsers && typingUsers.length > 0 && (
-        <div className="px-4 pb-2">
+      {shouldShowTypingIndicator && (
+        <div className="px-4 pb-2 z-10">
           <div className="typing-indicator">
-            <span className="text-sm text-gray-600 mr-2">
+            <span className="text-sm text-indigo-600 font-medium mr-2">
               {typingUsers.length === 1
-                ? `${typingUsers[0].username} is typing`
-                : `${typingUsers.length} people are typing`}
+                ? `${typingUsers[0].username} is typing...`
+                : `${typingUsers.length} people are typing...`}
             </span>
             <div className="flex items-end h-5">
-              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '0ms' }}></div>
-              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '150ms' }}></div>
-              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '300ms' }}></div>
+              <div className="typing-dot" style={{ animationDelay: '0ms' }}></div>
+              <div className="typing-dot" style={{ animationDelay: '150ms' }}></div>
+              <div className="typing-dot" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
         </div>
