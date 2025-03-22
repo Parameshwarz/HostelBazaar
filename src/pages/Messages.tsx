@@ -219,6 +219,26 @@ export const Messages = () => {
             )}
           </div>
 
+          {/* Typing indicator showing who is typing */}
+          <div className="w-full">
+            {typingUsers.filter(typingUser => 
+              typingUser.userId !== user?.id && typingUser.isTyping === true
+            ).length > 0 && (
+              <div className="typing-indicator-wrapper relative">
+                <div className="typing-indicator">
+                  {typingUsers.filter(typingUser => 
+                    typingUser.userId !== user?.id && typingUser.isTyping === true
+                  ).map(typingUser => typingUser.username).join(', ')} is typing
+                  <div className="typing-dots">
+                    <div className="typing-dot"></div>
+                    <div className="typing-dot"></div>
+                    <div className="typing-dot"></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Message Input - Fixed at bottom */}
           {selectedChat && (
             <div className="sticky bottom-0 bg-white border-t z-20">
