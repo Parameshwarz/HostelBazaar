@@ -229,9 +229,9 @@ export const Messages = () => {
                 replyTo={replyingTo}
                 disabled={!selectedChat || selectedChat.is_blocked}
                 onTyping={handleTypingIndication}
-                typingUsers={typingUsers.filter(user => 
+                typingUsers={typingUsers.filter(typingUser => 
                   // Only show typing users who aren't the current user
-                  user.userId !== user?.id && user.isTyping
+                  typingUser.userId !== user?.id && typingUser.isTyping
                 )}
               />
             </div>
