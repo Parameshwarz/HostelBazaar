@@ -11,93 +11,129 @@ export const usePresence = (userId: string | null) => {
       return;
     }
     
-    // Use a consistent, global channel for all presence functionality
-    // This ensures all users are in the same channel
-    const PRESENCE_CHANNEL = 'online-users-shared';
+    // Use a consistent channel name format
+    const channelName = 'presence-global';
+    console.log(`Setting up presence channel: ${channelName} for user ${userId}`);
     
-    console.log(`Setting up presence channel: ${PRESENCE_CHANNEL} for user ${userId}`);
+    // Create a channel with explicit presence config
+    const channel = supabase.channel(channelName, {
+      config: {
+        presence: {
+          key: `user-${userId}`,
+        },
+      },
+    });
     
-    const channel = supabase.channel(PRESENCE_CHANNEL);
-    
-    // Handle presence events
+    // Handle presence state more safely with error handling
     const handlePresenceState = (state: any) => {
-      console.log('Presence state updated:', state);
+      console.log('Received presence state:', state);
       
-      // Extract all online user IDs from the state object
-      const userIds = Object.keys(state)
-        .filter(key => key.startsWith('user-'))
-        .map(key => {
-          // Extract user ID from key (format: user-{id})
-          const id = key.replace('user-', '');
-          return id;
-        });
-      
-      console.log('Online users ids extracted:', userIds);
-      setOnlineUsers(userIds);
-      setLoading(false);
-    };
-    
-    const handlePresenceJoin = (joinEvent: any) => {
-      const key = Object.keys(joinEvent.presence)[0];
-      console.log('User joined:', key, joinEvent.presence[key]);
-      
-      if (key.startsWith('user-')) {
-        const joinedUserId = key.replace('user-', '');
-        setOnlineUsers(prev => {
-          if (prev.includes(joinedUserId)) return prev;
-          return [...prev, joinedUserId];
-        });
+      try {
+        // Safety check for undefined state
+        if (!state) {
+          console.error('Received undefined presence state');
+          return;
+        }
+        
+        // Safely extract user IDs with error handling
+        const userIds = Object.keys(state || {})
+          .filter(key => key.startsWith('user-'))
+          .map(key => key.replace('user-', ''));
+        
+        console.log('Extracted online users:', userIds);
+        setOnlineUsers(userIds);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error processing presence state:', error);
+        // Don't update state on error to avoid wiping out existing data
       }
     };
     
-    const handlePresenceLeave = (leaveEvent: any) => {
-      const key = Object.keys(leaveEvent.presence)[0];
-      console.log('User left:', key, leaveEvent.presence[key]);
-      
-      if (key.startsWith('user-')) {
-        const leftUserId = key.replace('user-', '');
-        setOnlineUsers(prev => prev.filter(id => id !== leftUserId));
+    // Track my presence with retries
+    const trackPresence = () => {
+      try {
+        channel.track({
+          user_id: userId,
+          online_at: new Date().toISOString()
+        });
+        console.log('Successfully tracked presence for', userId);
+      } catch (error) {
+        console.error('Error tracking presence:', error);
+        // Retry after a short delay
+        setTimeout(trackPresence, 1000);
       }
     };
     
-    // Update my presence status with more frequent heartbeats
-    const updateMyPresence = () => {
-      channel.track({
-        online_at: new Date().toISOString(),
-        user_id: userId
-      });
-    };
-    
-    // Subscribe to the presence channel
+    // Set up presence channel with error handling
     channel
       .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        handlePresenceState(state);
+        try {
+          const state = channel.presenceState();
+          handlePresenceState(state);
+        } catch (error) {
+          console.error('Error in presence sync event:', error);
+        }
       })
-      .on('presence', { event: 'join' }, handlePresenceJoin)
-      .on('presence', { event: 'leave' }, handlePresenceLeave)
+      .on('presence', { event: 'join' }, (payload: any) => {
+        try {
+          console.log('User joined presence:', payload);
+          // Check if we have a valid payload - safely check properties
+          if (payload) {
+            // Update presence state after join event
+            const state = channel.presenceState();
+            handlePresenceState(state);
+          }
+        } catch (error) {
+          console.error('Error in presence join event:', error);
+        }
+      })
+      .on('presence', { event: 'leave' }, (payload: any) => {
+        try {
+          console.log('User left presence:', payload);
+          // Check if we have a valid payload - safely check properties
+          if (payload) {
+            // Update presence state after leave event
+            const state = channel.presenceState();
+            handlePresenceState(state);
+          }
+        } catch (error) {
+          console.error('Error in presence leave event:', error);
+        }
+      })
       .subscribe(async (status) => {
+        console.log('Presence channel status:', status);
+        
         if (status === 'SUBSCRIBED') {
           // Start tracking presence
-          updateMyPresence();
-          console.log('Presence channel subscribed');
+          trackPresence();
           
-          // Set up a heartbeat at regular intervals to keep presence active
+          // Set up heartbeat
           const heartbeatInterval = setInterval(() => {
-            updateMyPresence();
-            console.log('Presence heartbeat sent');
-          }, 15000); // 15 seconds - more frequent for better reliability
+            try {
+              channel.track({
+                user_id: userId,
+                online_at: new Date().toISOString()
+              });
+              console.log('Presence heartbeat sent');
+            } catch (error) {
+              console.error('Error sending heartbeat:', error);
+            }
+          }, 10000); // Every 10 seconds
           
           // Clean up interval on unsubscribe
-          return () => {
-            clearInterval(heartbeatInterval);
-          };
+          return () => clearInterval(heartbeatInterval);
         }
       });
     
     // Cleanup function
     return () => {
       console.log('Cleaning up presence channel');
+      // Untrack before unsubscribing
+      try {
+        channel.untrack();
+      } catch (error) {
+        console.error('Error untracking presence:', error);
+      }
       channel.unsubscribe();
     };
   }, [userId]);
