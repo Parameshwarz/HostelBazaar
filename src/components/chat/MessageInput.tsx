@@ -9,30 +9,30 @@ const typingAnimationStyle = `
       transform: translateY(0);
     }
     40% {
-      transform: translateY(-6px);
+      transform: translateY(-8px);
     }
   }
   .typing-dot {
     animation: bounce-delay 1.4s infinite ease-in-out;
     display: inline-block;
+    height: 10px !important;
+    width: 10px !important;
+    background-color: #4f46e5 !important;
+    margin: 0 3px !important;
+    border-radius: 50% !important;
   }
   .typing-indicator {
     background-color: #e0e7ff;
     border-radius: 16px;
-    padding: 8px 14px;
-    margin-bottom: 12px;
+    padding: 10px 16px;
+    margin: 8px 12px;
     display: inline-flex;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    max-width: 250px;
-    border: 1px solid #c7d2fe;
-  }
-  .typing-dot {
-    height: 8px !important;
-    width: 8px !important;
-    background-color: #6366f1 !important;
-    margin: 0 2px !important;
-    border-radius: 50% !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    max-width: 300px;
+    border: 2px solid #c7d2fe;
+    position: relative;
+    z-index: 9999 !important;
   }
 `;
 
@@ -119,23 +119,23 @@ const MessageInput: React.FC<MessageInputProps> = ({
   console.log('[TYPING INDICATOR] Should show indicator:', shouldShowTypingIndicator);
 
   return (
-    <div>
+    <div className="relative">
       {/* Add style element for typing animation */}
       <style dangerouslySetInnerHTML={{ __html: typingAnimationStyle }} />
       
-      {/* Enhanced typing indicator - more visible and properly positioned */}
+      {/* Enhanced typing indicator with absolute positioning and high z-index */}
       {shouldShowTypingIndicator && (
-        <div className="px-4 pb-2 z-10">
-          <div className="typing-indicator">
-            <span className="text-sm text-indigo-600 font-medium mr-2">
+        <div className="absolute bottom-full left-0 right-0 z-50 pointer-events-none">
+          <div className="typing-indicator mx-auto">
+            <span className="text-sm text-indigo-700 font-semibold mr-2">
               {typingUsers.length === 1
                 ? `${typingUsers[0].username} is typing...`
                 : `${typingUsers.length} people are typing...`}
             </span>
             <div className="flex items-end h-5">
               <div className="typing-dot" style={{ animationDelay: '0ms' }}></div>
-              <div className="typing-dot" style={{ animationDelay: '150ms' }}></div>
-              <div className="typing-dot" style={{ animationDelay: '300ms' }}></div>
+              <div className="typing-dot" style={{ animationDelay: '200ms' }}></div>
+              <div className="typing-dot" style={{ animationDelay: '400ms' }}></div>
             </div>
           </div>
         </div>
