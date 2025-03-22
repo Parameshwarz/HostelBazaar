@@ -21,15 +21,22 @@ export const useTyping = (chatId: string | null, userId: string | null, username
     
     console.log(`Setting up typing channel for chat: ${chatId}`);
     
-    // Use a consistent channel name for all users in this chat
-    const channelName = `chat-typing:${chatId}`;
+    // CRITICAL FIX: Use simple chat channel name without the "typing" suffix 
+    // This ensures all users join exactly the same channel name
+    const channelName = `chat:${chatId}`;
     const channel = supabase.channel(channelName);
     channelRef.current = channel;
     
-    // Subscribe to typing broadcasts
+    // Subscribe to typing broadcasts - FIXED EVENT NAME
     channel
       .on('broadcast', { event: 'typing' }, (payload) => {
         console.log('Received typing event:', payload);
+        
+        // Check if payload has the expected structure
+        if (!payload.payload || typeof payload.payload !== 'object') {
+          console.error('Invalid typing payload received:', payload);
+          return;
+        }
         
         // Don't update for own typing events
         if (payload.payload.userId === userId) {
@@ -52,7 +59,7 @@ export const useTyping = (chatId: string | null, userId: string | null, username
               );
             }
             
-            console.log('Adding new typing user to list');
+            console.log('Adding new typing user to list:', payload.payload.username);
             return [...current, {
               userId: payload.payload.userId,
               username: payload.payload.username || 'User',
@@ -104,14 +111,14 @@ export const useTyping = (chatId: string | null, userId: string | null, username
     console.log(`Sending typing status: ${typing} for user ${username} in chat: ${chatId}`);
     
     try {
+      // FIXED: Make sure we use a simpler payload structure
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
         payload: { 
           userId, 
           username, 
-          isTyping: typing,
-          timestamp: new Date().toISOString()
+          isTyping: typing 
         }
       });
     } catch (error) {

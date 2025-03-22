@@ -14,6 +14,17 @@ const typingAnimationStyle = `
   }
   .typing-dot {
     animation: bounce-delay 1.4s infinite ease-in-out;
+    display: inline-block;
+  }
+  .typing-indicator {
+    background-color: #f3f4f6;
+    border-radius: 16px;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    max-width: 200px;
   }
 `;
 
@@ -39,6 +50,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Log typing users whenever they change
+  useEffect(() => {
+    if (typingUsers.length > 0) {
+      console.log('TYPING USERS UPDATED:', typingUsers);
+    }
+  }, [typingUsers]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -84,18 +102,19 @@ const MessageInput: React.FC<MessageInputProps> = ({
       {/* Add style element for typing animation */}
       <style dangerouslySetInnerHTML={{ __html: typingAnimationStyle }} />
       
+      {/* Enhanced typing indicator - more visible and properly positioned */}
       {typingUsers && typingUsers.length > 0 && (
         <div className="px-4 pb-2">
-          <div className="text-xs text-gray-500 flex items-center">
-            <span className="font-medium mr-1">
+          <div className="typing-indicator">
+            <span className="text-sm text-gray-600 mr-2">
               {typingUsers.length === 1
                 ? `${typingUsers[0].username} is typing`
                 : `${typingUsers.length} people are typing`}
             </span>
-            <div className="flex items-end h-5 ml-1">
-              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '0ms' }}></div>
-              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '150ms' }}></div>
-              <div className="typing-dot bg-gray-400 rounded-full h-1.5 w-1.5 mx-0.5" style={{ animationDelay: '300ms' }}></div>
+            <div className="flex items-end h-5">
+              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '0ms' }}></div>
+              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '150ms' }}></div>
+              <div className="typing-dot bg-gray-400 rounded-full h-2 w-2 mx-0.5" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
         </div>
