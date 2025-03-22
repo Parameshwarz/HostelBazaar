@@ -9,8 +9,10 @@ export const usePresence = (userId: string | null) => {
     
     console.log('Setting up presence tracking for user:', userId);
     
-    // Subscribe to presence updates with an improved channel name to avoid conflicts
-    const channelName = `online-users-${Date.now()}`;
+    // Create a SHARED channel for all users - this is critical
+    // All users must join the same channel to see each other
+    const channelName = 'online-users-shared';
+    
     const presenceChannel = supabase.channel(channelName, {
       config: {
         presence: {
@@ -28,7 +30,7 @@ export const usePresence = (userId: string | null) => {
           const state = presenceChannel.presenceState();
           console.log('Presence state updated:', state);
           
-          // Extract user IDs from presence state
+          // Extract user IDs from presence state - this is the critical part
           const onlineUserIds = Object.keys(state).map(key => key.replace('user-', ''));
           console.log('Online users ids extracted:', onlineUserIds);
           
@@ -39,9 +41,27 @@ export const usePresence = (userId: string | null) => {
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences);
+        
+        // Update online users immediately when someone joins
+        try {
+          const state = presenceChannel.presenceState();
+          const currentOnlineUsers = Object.keys(state).map(key => key.replace('user-', ''));
+          setOnlineUsers(currentOnlineUsers);
+        } catch (error) {
+          console.error('Error processing join event:', error);
+        }
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         console.log('User left:', key, leftPresences);
+        
+        // Update online users immediately when someone leaves
+        try {
+          const state = presenceChannel.presenceState();
+          const currentOnlineUsers = Object.keys(state).map(key => key.replace('user-', ''));
+          setOnlineUsers(currentOnlineUsers);
+        } catch (error) {
+          console.error('Error processing leave event:', error);
+        }
       })
       .subscribe(async (status) => {
         console.log('Presence channel status:', status);
@@ -78,7 +98,7 @@ export const usePresence = (userId: string | null) => {
         });
         console.log('Presence heartbeat sent');
       }
-    }, 30000); // Send heartbeat every 30 seconds
+    }, 15000); // Send heartbeat every 15 seconds - more frequent updates
     
     // Set up event listeners for page visibility changes
     const handleVisibilityChange = () => {
