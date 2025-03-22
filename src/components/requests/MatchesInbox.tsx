@@ -74,13 +74,6 @@ export default function MatchesInbox() {
             status,
             created_at,
             item_id,
-            items!inner (
-              id,
-              title,
-              images,
-              condition,
-              price
-            ),
             requested_items!inner (
               title,
               description,
@@ -114,13 +107,6 @@ export default function MatchesInbox() {
             status,
             created_at,
             item_id,
-            items!inner (
-              id,
-              title,
-              images,
-              condition,
-              price
-            ),
             requested_items!inner (
               title,
               description,
@@ -133,6 +119,33 @@ export default function MatchesInbox() {
           .order('created_at', { ascending: false });
 
         if (receivedError) throw receivedError;
+
+        // Get item details for matches that have item_id
+        const allMatchesRaw = [...(sentMatches || []), ...(receivedMatches || [])];
+        const itemIds = allMatchesRaw
+          .filter(match => match.item_id)
+          .map(match => match.item_id);
+        
+        let itemDetailsMap: Record<string, any> = {};
+        if (itemIds.length > 0) {
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('items')
+            .select('id, title, images, condition, price')
+            .in('id', itemIds);
+            
+          if (itemsError) throw itemsError;
+          
+          itemDetailsMap = (itemsData || []).reduce((acc: Record<string, any>, item: any) => {
+            acc[item.id] = {
+              title: item.title,
+              condition: item.condition,
+              price: item.price,
+              item_id: item.id,
+              images: item.images
+            };
+            return acc;
+          }, {});
+        }
 
         // Get profiles for received matches
         const receivedUserIds = receivedMatches?.map(match => match.user_id) || [];
@@ -151,17 +164,16 @@ export default function MatchesInbox() {
 
         // Combine both sets of matches and process the item details
         const matchesMap = new Map();
-        [...(sentMatches || []), ...(receivedMatches || [])].forEach(match => {
+        allMatchesRaw.forEach(match => {
           if (!matchesMap.has(match.id)) {
-            // If it's a listed item, use the items data
-            const item = match.items?.[0]; // Get first item from array
-            const itemDetails = match.item_id && item ? {
-              title: item.title,
-              condition: item.condition,
-              price: item.price,
-              item_id: item.id,
-              images: item.images
-            } : match.item_details; // Otherwise use the quick response details
+            // Get item details from our map or create default
+            const itemDetails = match.item_id && itemDetailsMap[match.item_id] 
+              ? itemDetailsMap[match.item_id]
+              : {
+                  title: "Unknown Item",
+                  condition: "Unknown", 
+                  price: 0
+                };
 
             matchesMap.set(match.id, {
               ...match,
@@ -172,7 +184,7 @@ export default function MatchesInbox() {
           }
         });
         
-        const allMatches = Array.from(matchesMap.values());
+        const allMatches = Array.from(matchesMap.values()) as Match[];
         console.log('All matches:', allMatches);
         setMatches(allMatches);
 

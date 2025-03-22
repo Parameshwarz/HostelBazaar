@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { TypingStatus } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { useSupabase } from '../contexts/SupabaseContext';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 // Local interface to bridge between the two versions of TypingStatus
@@ -14,7 +13,6 @@ export interface TypingUser {
 
 export const useTyping = (chatId: string) => {
   const { user } = useAuth();
-  const { supabase } = useSupabase();
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const typingTimestampsRef = useRef<Map<string, number>>(new Map());
@@ -46,7 +44,7 @@ export const useTyping = (chatId: string) => {
 
     // Update local state
     setIsTyping(isTyping);
-  }, [user, chatId, supabase]);
+  }, [user, chatId]);
 
   // UseEffect to set up typing event listener
   useEffect(() => {
@@ -149,7 +147,7 @@ export const useTyping = (chatId: string) => {
         userTypingChannelRef.current = null;
       }
     };
-  }, [chatId, user, supabase, typingUsers]);
+  }, [chatId, user, typingUsers]);
 
   // Function to indicate typing with auto-reset after inactivity
   const indicateTyping = useCallback(() => {
