@@ -163,8 +163,8 @@ export const Messages = () => {
             isUserOnline={selectedChat ? isUserOnline(selectedChat.other_user.id) : false}
           />
 
-          {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto p-4" ref={messagesContainerRef}>
+          {/* Messages Container - Adjusted height with max-height */}
+          <div className="h-[calc(100vh-160px)] overflow-y-auto p-4" ref={messagesContainerRef}>
             {selectedChat ? (
               <MessageList
                 messages={messages}
@@ -183,17 +183,19 @@ export const Messages = () => {
             )}
           </div>
 
-          {/* Message Input */}
+          {/* Message Input - Now will be visible without scrolling */}
           {selectedChat && (
-            <MessageInput
-              onSendMessage={handleSendMessage}
-              onReply={(message) => setReplyingTo(message)}
-              onCancelReply={() => setReplyingTo(null)}
-              replyTo={replyingTo}
-              disabled={!selectedChat || selectedChat.is_blocked}
-              onTyping={indicateTyping}
-              typingUsers={typingUsers}
-            />
+            <div className="mt-auto">
+              <MessageInput
+                onSendMessage={handleSendMessage}
+                onReply={(message) => setReplyingTo(message)}
+                onCancelReply={() => setReplyingTo(null)}
+                replyTo={replyingTo}
+                disabled={!selectedChat || selectedChat.is_blocked}
+                onTyping={indicateTyping}
+                typingUsers={typingUsers}
+              />
+            </div>
           )}
         </div>
 
