@@ -230,8 +230,8 @@ export const Messages = () => {
                 disabled={!selectedChat || selectedChat.is_blocked}
                 onTyping={handleTypingIndication}
                 typingUsers={typingUsers.filter(typingUser => 
-                  // Only show typing users who aren't the current user
-                  typingUser.userId !== user?.id && typingUser.isTyping
+                  // Only show typing users who aren't the current user and are actually typing
+                  typingUser.userId !== user?.id
                 )}
               />
             </div>
