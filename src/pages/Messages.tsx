@@ -79,7 +79,7 @@ export const Messages = () => {
       fetchMessages(1);
       fetchDealStatus(selectedChat.id);
       
-      // Set typing to false when changing chats
+      // Only clear typing status when changing chats, not on every message fetch
       if (setUserTyping) {
         setUserTyping(false);
       }
@@ -114,7 +114,7 @@ export const Messages = () => {
     if (!selectedChat || !user || !content.trim()) return;
     
     try {
-      // When sending message, manually set typing to false
+      // Only clear typing status when actually sending a message
       if (setUserTyping) {
         setUserTyping(false);
       }

@@ -15,6 +15,8 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   const channelRef = useRef<any>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingTimestampsRef = useRef<Map<string, number>>(new Map());
+  // Keep track of whether we're actively typing to avoid unintentional resets
+  const isActivelyTypingRef = useRef<boolean>(false);
   
   // Set up typing indicator channel
   useEffect(() => {
@@ -45,7 +47,7 @@ export const useTyping = (chatId: string | null, userId: string | null, username
       // Setup a cleanup interval to remove stale typing users
       const cleanupInterval = setInterval(() => {
         const now = Date.now();
-        const staleThreshold = 5000; // 5 seconds
+        const staleThreshold = 12000; // Increased to 12 seconds (from 5)
         let hasStaleUsers = false;
         
         typingTimestampsRef.current.forEach((timestamp, id) => {
@@ -225,6 +227,14 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   
   // Function to update typing status - only sends if changed
   const setUserTyping = useCallback((typing: boolean) => {
+    if (typing) {
+      // If we're setting typing to true, update the actively typing ref
+      isActivelyTypingRef.current = true;
+    } else {
+      // If we're manually clearing typing state, update the ref
+      isActivelyTypingRef.current = false;
+    }
+    
     if (typing !== isTyping) {
       console.log(`[TYPING DEBUG] Changing typing status: ${typing} for user ${username}`);
       setIsTyping(typing);
@@ -236,6 +246,7 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   const indicateTyping = useCallback(() => {
     // Set typing status to true
     setUserTyping(true);
+    isActivelyTypingRef.current = true;
     console.log('[TYPING DEBUG] Called indicateTyping()');
     
     // Clear existing timeout if any
@@ -245,10 +256,13 @@ export const useTyping = (chatId: string | null, userId: string | null, username
     
     // Set timeout to clear typing status after inactivity
     timeoutRef.current = setTimeout(() => {
-      setUserTyping(false);
-      timeoutRef.current = null;
-      console.log('[TYPING DEBUG] Auto-reset typing status after timeout');
-    }, 3000);
+      if (isActivelyTypingRef.current) {
+        setUserTyping(false);
+        isActivelyTypingRef.current = false;
+        timeoutRef.current = null;
+        console.log('[TYPING DEBUG] Auto-reset typing status after timeout');
+      }
+    }, 10000); // Increased from 3000ms to 10000ms (10 seconds)
     
     // Return cleanup function
     return () => {
