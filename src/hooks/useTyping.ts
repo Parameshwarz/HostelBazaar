@@ -14,214 +14,197 @@ export const useTyping = (chatId: string | null, userId: string | null, username
   const [isTyping, setIsTyping] = useState(false);
   const channelRef = useRef<any>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimestampsRef = useRef<Map<string, number>>(new Map());
   
-  // Create stable channel name with a proper format - very important in production
-  const getChannelName = useCallback((chatId: string) => {
-    // Important: Must be named properly for production
-    return `typing:${chatId}`;
-  }, []);
-  
-  // Helper function to send typing status with error handling
-  const sendTypingStatus = useCallback((typing: boolean) => {
-    if (!chatId || !userId) {
-      console.log('Cannot send typing status - missing chatId or userId');
-      return;
-    }
+  // Set up typing indicator channel
+  useEffect(() => {
+    if (!chatId || !userId) return;
     
-    if (!channelRef.current) {
-      console.log('Cannot send typing status - no active channel');
-      return;
-    }
+    console.log(`Setting up SIMPLE typing for chat: ${chatId}`);
     
-    console.log(`Sending typing status: ${typing} for user ${username} in chat: ${chatId}`);
+    // Use a simpler channel name - more reliable in production
+    const channelName = `typing-${chatId}`;
     
     try {
+      // Clean up previous channel if any
+      if (channelRef.current) {
+        try {
+          channelRef.current.unsubscribe();
+        } catch (error) {
+          console.error('Error unsubscribing from previous channel:', error);
+        }
+      }
+      
+      // Create simple broadcast channel
+      const channel = supabase.channel(channelName);
+      channelRef.current = channel;
+      
+      // Setup a cleanup interval to remove stale typing users
+      const cleanupInterval = setInterval(() => {
+        const now = Date.now();
+        const staleThreshold = 5000; // 5 seconds
+        let hasStaleUsers = false;
+        
+        typingTimestampsRef.current.forEach((timestamp, id) => {
+          if (now - timestamp > staleThreshold) {
+            console.log(`User ${id} typing status is stale, removing`);
+            typingTimestampsRef.current.delete(id);
+            hasStaleUsers = true;
+          }
+        });
+        
+        // Update typing users if we removed any stale ones
+        if (hasStaleUsers) {
+          setTypingUsers(prev => prev.filter(user => 
+            typingTimestampsRef.current.has(user.userId)
+          ));
+        }
+      }, 2000);
+      
+      // Subscribe to typing events
+      channel
+        .on('broadcast', { event: 'typing' }, (payload) => {
+          try {
+            console.log('Received typing broadcast:', payload);
+            
+            // Validate payload
+            if (!payload || !payload.payload || typeof payload.payload !== 'object') {
+              console.error('Invalid typing payload:', payload);
+              return;
+            }
+            
+            const { userId: senderId, username: senderName, isTyping: senderIsTyping } = payload.payload;
+            
+            // Skip our own events
+            if (senderId === userId) {
+              console.log('Ignoring own typing event');
+              return;
+            }
+            
+            console.log(`Processing typing from ${senderName || 'Unknown'} (${senderId}): ${senderIsTyping}`);
+            
+            if (senderIsTyping) {
+              // Record timestamp for this user
+              typingTimestampsRef.current.set(senderId, Date.now());
+              
+              // Update typing users
+              setTypingUsers(prev => {
+                // Check if user is already in the list
+                if (prev.some(u => u.userId === senderId)) {
+                  return prev.map(u => 
+                    u.userId === senderId ? { ...u, isTyping: true } : u
+                  );
+                }
+                
+                // Add new typing user
+                return [...prev, {
+                  userId: senderId,
+                  username: senderName || 'User',
+                  isTyping: true
+                }];
+              });
+            } else {
+              // Remove timestamp
+              typingTimestampsRef.current.delete(senderId);
+              
+              // Remove user from typing list
+              setTypingUsers(prev => 
+                prev.filter(u => u.userId !== senderId)
+              );
+            }
+          } catch (error) {
+            console.error('Error processing typing event:', error);
+          }
+        })
+        .subscribe((status, err) => {
+          console.log(`Typing channel status: ${status}`);
+          
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully subscribed to typing broadcasts');
+          } else if (err) {
+            console.error('Error subscribing to typing channel:', err);
+          }
+        });
+      
+      // Cleanup function
+      return () => {
+        console.log('Cleaning up typing channel');
+        clearInterval(cleanupInterval);
+        
+        if (isTyping) {
+          // Send that we stopped typing
+          try {
+            channel.send({
+              type: 'broadcast',
+              event: 'typing',
+              payload: { userId, username, isTyping: false }
+            });
+          } catch (error) {
+            console.error('Error sending stop typing on cleanup:', error);
+          }
+        }
+        
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        
+        try {
+          channel.unsubscribe();
+        } catch (error) {
+          console.error('Error unsubscribing from typing channel:', error);
+        }
+        channelRef.current = null;
+      };
+    } catch (error) {
+      console.error('Error setting up typing channel:', error);
+      return () => {};
+    }
+  }, [chatId, userId, username]);
+  
+  // Simple function to send typing status
+  const sendTypingStatus = useCallback((isTyping: boolean) => {
+    if (!chatId || !userId || !channelRef.current) return;
+    
+    try {
+      console.log(`Sending typing status: ${isTyping} for user ${username} in chat: ${chatId}`);
+      
       channelRef.current.send({
         type: 'broadcast',
         event: 'typing',
-        payload: { 
-          userId, 
-          username, 
-          isTyping: typing 
-        }
+        payload: { userId, username, isTyping }
       });
     } catch (error) {
       console.error('Error sending typing status:', error);
     }
   }, [chatId, userId, username]);
   
-  // Set up typing indicator channel with robust error handling for production
-  useEffect(() => {
-    if (!chatId || !userId) return;
-    
-    console.log(`Setting up typing channel for chat: ${chatId} with user: ${userId}`);
-    
-    try {
-      // Use a stable channel name that doesn't change
-      const channelName = getChannelName(chatId);
-      
-      // Only create a new channel if we don't already have one or if channel name changed
-      if (!channelRef.current || channelRef.current.topic !== channelName) {
-        // Clean up any existing channel first
-        if (channelRef.current) {
-          console.log('Cleaning up previous typing channel');
-          try {
-            channelRef.current.unsubscribe();
-          } catch (error) {
-            console.error('Error unsubscribing from previous channel:', error);
-          }
-        }
-        
-        console.log(`Creating new typing channel: ${channelName}`);
-        try {
-          // Create channel with proper configuration for production
-          const channel = supabase.channel(channelName);
-          channelRef.current = channel;
-          
-          // Set up broadcast listener with robust error handling
-          channel
-            .on('broadcast', { event: 'typing' }, (payload) => {
-              try {
-                console.log('Received typing event:', payload);
-                
-                // Safety check for payload
-                if (!payload || !payload.payload || typeof payload.payload !== 'object') {
-                  console.error('Invalid typing payload format:', payload);
-                  return;
-                }
-                
-                // Extract sender info with safety checks
-                const senderInfo = payload.payload;
-                const senderId = senderInfo.userId;
-                const senderName = senderInfo.username || 'Unknown User';
-                
-                if (!senderId) {
-                  console.error('Missing sender ID in typing payload:', payload);
-                  return;
-                }
-                
-                // Ignore my own typing events
-                if (senderId === userId) {
-                  console.log('Ignoring own typing event');
-                  return;
-                }
-                
-                console.log(`Processing typing event from ${senderName} (${senderId})`);
-                
-                if (senderInfo.isTyping === true) {
-                  console.log(`User ${senderName} is typing`);
-                  
-                  // Add or update typing user with immutable update pattern
-                  setTypingUsers(current => {
-                    const exists = current.some(user => user.userId === senderId);
-                    if (exists) {
-                      console.log('Refreshing existing typing user status');
-                      return current.map(user => 
-                        user.userId === senderId 
-                          ? { ...user, isTyping: true } 
-                          : user
-                      );
-                    }
-                    
-                    console.log('Adding new typing user:', senderName);
-                    return [...current, {
-                      userId: senderId,
-                      username: senderName,
-                      isTyping: true
-                    }];
-                  });
-                } else {
-                  console.log(`User ${senderName} stopped typing`);
-                  // Remove user from typing list
-                  setTypingUsers(current => 
-                    current.filter(user => user.userId !== senderId)
-                  );
-                }
-              } catch (error) {
-                console.error('Error processing typing event:', error);
-              }
-            })
-            .subscribe((status, err) => {
-              console.log(`Typing channel status: ${status}`, err || '');
-              
-              if (status === 'SUBSCRIBED') {
-                console.log('Successfully subscribed to typing channel');
-              } else if (err) {
-                console.error('Error subscribing to typing channel:', err);
-              }
-            });
-        } catch (error) {
-          console.error('Error creating typing channel:', error);
-        }
-      }
-    } catch (error) {
-      console.error('Unexpected error in typing channel setup:', error);
-    }
-    
-    // Cleanup function with error handling
-    return () => {
-      try {
-        console.log('Cleaning up typing subscription');
-        
-        // Send that we stopped typing when leaving
-        if (isTyping) {
-          try {
-            sendTypingStatus(false);
-          } catch (error) {
-            console.error('Error sending stop typing status on cleanup:', error);
-          }
-        }
-        
-        // Clear any pending timeouts
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        
-        // Unsubscribe from channel
-        if (channelRef.current) {
-          try {
-            channelRef.current.unsubscribe();
-            channelRef.current = null;
-          } catch (error) {
-            console.error('Error unsubscribing from typing channel:', error);
-          }
-        }
-      } catch (error) {
-        console.error('Error in typing cleanup:', error);
-      }
-    };
-  }, [chatId, userId, getChannelName, isTyping, sendTypingStatus]); 
-  
-  // Function to broadcast typing status - only sends if status changed
+  // Function to update typing status - only sends if changed
   const setUserTyping = useCallback((typing: boolean) => {
-    if (!chatId || !userId) return;
-    
-    // Only send update if status changed to avoid spamming
     if (typing !== isTyping) {
       console.log(`Changing typing status: ${typing} for user ${username}`);
       setIsTyping(typing);
       sendTypingStatus(typing);
     }
-  }, [chatId, userId, username, isTyping, sendTypingStatus]);
+  }, [isTyping, username, sendTypingStatus]);
   
-  // Debounced typing indicator with auto-reset
+  // Function to indicate typing with auto-reset after inactivity
   const indicateTyping = useCallback(() => {
-    // Set typing to true immediately
+    // Set typing status to true
     setUserTyping(true);
     
-    // Reset any existing timeout
+    // Clear existing timeout if any
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     
-    // Automatically stop typing indicator after 3 seconds of inactivity
+    // Set timeout to clear typing status after inactivity
     timeoutRef.current = setTimeout(() => {
       setUserTyping(false);
       timeoutRef.current = null;
     }, 3000);
     
-    // Return a cleanup function
+    // Return cleanup function
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);

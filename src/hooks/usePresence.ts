@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
+// Use a direct broadcast approach instead of Supabase presence
 export const usePresence = (userId: string | null) => {
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const channelRef = useRef<any>(null);
+  const heartbeatIntervalRef = useRef<any>(null);
   
   useEffect(() => {
     if (!userId) {
@@ -11,130 +14,127 @@ export const usePresence = (userId: string | null) => {
       return;
     }
     
-    // Use a consistent channel name format
-    const channelName = 'presence-global';
-    console.log(`Setting up presence channel: ${channelName} for user ${userId}`);
+    // Simple channel name with no special configuration
+    const channelName = 'online:users';
+    console.log(`Setting up BROADCAST-BASED presence for user ${userId}`);
     
-    // Create a channel with explicit presence config
-    const channel = supabase.channel(channelName, {
-      config: {
-        presence: {
-          key: `user-${userId}`,
-        },
-      },
-    });
+    // Create a broadcast channel instead of a presence channel
+    const channel = supabase.channel(channelName);
+    channelRef.current = channel;
     
-    // Handle presence state more safely with error handling
-    const handlePresenceState = (state: any) => {
-      console.log('Received presence state:', state);
+    // Store last seen timestamps
+    const onlineTimestamps = new Map<string, number>();
+    
+    // Clean up stale users every 15 seconds
+    const cleanupStaleUsers = () => {
+      const now = Date.now();
+      const staleThreshold = 30000; // 30 seconds
+      let changed = false;
       
-      try {
-        // Safety check for undefined state
-        if (!state) {
-          console.error('Received undefined presence state');
-          return;
+      onlineTimestamps.forEach((timestamp, id) => {
+        if (now - timestamp > staleThreshold) {
+          console.log(`User ${id} is stale, removing from online users`);
+          onlineTimestamps.delete(id);
+          changed = true;
         }
-        
-        // Safely extract user IDs with error handling
-        const userIds = Object.keys(state || {})
-          .filter(key => key.startsWith('user-'))
-          .map(key => key.replace('user-', ''));
-        
-        console.log('Extracted online users:', userIds);
-        setOnlineUsers(userIds);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error processing presence state:', error);
-        // Don't update state on error to avoid wiping out existing data
+      });
+      
+      if (changed) {
+        setOnlineUsers(Array.from(onlineTimestamps.keys()));
       }
     };
     
-    // Track my presence with retries
-    const trackPresence = () => {
-      try {
-        channel.track({
-          user_id: userId,
-          online_at: new Date().toISOString()
-        });
-        console.log('Successfully tracked presence for', userId);
-      } catch (error) {
-        console.error('Error tracking presence:', error);
-        // Retry after a short delay
-        setTimeout(trackPresence, 1000);
-      }
-    };
-    
-    // Set up presence channel with error handling
+    // Register event handlers
     channel
-      .on('presence', { event: 'sync' }, () => {
+      .on('broadcast', { event: 'presence' }, (payload) => {
         try {
-          const state = channel.presenceState();
-          handlePresenceState(state);
-        } catch (error) {
-          console.error('Error in presence sync event:', error);
-        }
-      })
-      .on('presence', { event: 'join' }, (payload: any) => {
-        try {
-          console.log('User joined presence:', payload);
-          // Check if we have a valid payload - safely check properties
-          if (payload) {
-            // Update presence state after join event
-            const state = channel.presenceState();
-            handlePresenceState(state);
+          console.log('Received presence broadcast:', payload);
+          
+          if (!payload || !payload.payload || !payload.payload.user_id) {
+            console.error('Invalid presence payload', payload);
+            return;
           }
-        } catch (error) {
-          console.error('Error in presence join event:', error);
-        }
-      })
-      .on('presence', { event: 'leave' }, (payload: any) => {
-        try {
-          console.log('User left presence:', payload);
-          // Check if we have a valid payload - safely check properties
-          if (payload) {
-            // Update presence state after leave event
-            const state = channel.presenceState();
-            handlePresenceState(state);
+          
+          const broadcastUserId = payload.payload.user_id;
+          
+          // Skip our own broadcasts
+          if (broadcastUserId === userId) {
+            return;
           }
+          
+          // Record timestamp of the user
+          onlineTimestamps.set(broadcastUserId, Date.now());
+          
+          // Update online users
+          const onlineUsersList = Array.from(onlineTimestamps.keys());
+          console.log('Updated online users from broadcast:', onlineUsersList);
+          setOnlineUsers(onlineUsersList);
+          
         } catch (error) {
-          console.error('Error in presence leave event:', error);
+          console.error('Error processing presence broadcast:', error);
         }
       })
-      .subscribe(async (status) => {
-        console.log('Presence channel status:', status);
+      .subscribe((status) => {
+        console.log(`Presence broadcast channel status: ${status}`);
         
         if (status === 'SUBSCRIBED') {
-          // Start tracking presence
-          trackPresence();
+          console.log('Successfully subscribed to presence broadcasts');
+          setLoading(false);
           
-          // Set up heartbeat
-          const heartbeatInterval = setInterval(() => {
+          // Start sending regular heartbeats
+          const sendHeartbeat = () => {
             try {
-              channel.track({
-                user_id: userId,
-                online_at: new Date().toISOString()
+              channel.send({
+                type: 'broadcast',
+                event: 'presence',
+                payload: {
+                  user_id: userId,
+                  online_at: new Date().toISOString()
+                }
               });
-              console.log('Presence heartbeat sent');
+              console.log('Presence heartbeat broadcast sent');
             } catch (error) {
-              console.error('Error sending heartbeat:', error);
+              console.error('Error sending presence heartbeat:', error);
             }
-          }, 10000); // Every 10 seconds
+          };
           
-          // Clean up interval on unsubscribe
-          return () => clearInterval(heartbeatInterval);
+          // Send initial heartbeat
+          sendHeartbeat();
+          
+          // Send heartbeat every 5 seconds
+          heartbeatIntervalRef.current = setInterval(() => {
+            sendHeartbeat();
+            cleanupStaleUsers();
+          }, 5000);
         }
       });
     
     // Cleanup function
     return () => {
-      console.log('Cleaning up presence channel');
-      // Untrack before unsubscribing
-      try {
-        channel.untrack();
-      } catch (error) {
-        console.error('Error untracking presence:', error);
+      console.log('Cleaning up presence broadcast subscription');
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
-      channel.unsubscribe();
+      
+      if (channelRef.current) {
+        try {
+          // Send offline status before unsubscribing
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'presence',
+            payload: {
+              user_id: userId,
+              offline: true
+            }
+          }).catch(console.error);
+          
+          channelRef.current.unsubscribe();
+          channelRef.current = null;
+        } catch (error) {
+          console.error('Error unsubscribing from presence channel:', error);
+        }
+      }
     };
   }, [userId]);
   
