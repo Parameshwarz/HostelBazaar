@@ -36,6 +36,7 @@ import BrowseMerch from './pages/BrowseMerch';
 import StyleFeedPage from './pages/StyleFeed';
 import Matches from './pages/Matches';
 import { initAuth } from './store/initAuth';
+import TestNotificationPage from './pages/TestNotification';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -122,6 +123,7 @@ function AppContent() {
               <Route path="/trade" element={<Trade />} />
               <Route path="/requests" element={<Requests />} />
               <Route path="/style-feed" element={<StyleFeedPage />} />
+              <Route path="/test-notifications" element={<TestNotificationPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

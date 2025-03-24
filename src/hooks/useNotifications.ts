@@ -35,16 +35,20 @@ export const useNotifications = () => {
     setError(null);
 
     try {
+      console.log("Fetching notifications for user:", user.id);
       // Fetch notifications from Supabase
       const { data, error: fetchError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error("Error fetching notifications:", fetchError);
+        throw fetchError;
+      }
 
+      console.log("Notifications received:", data);
       setNotifications(data || []);
       setUnreadCount(data?.filter(n => !n.is_read).length || 0);
     } catch (err: any) {
@@ -103,31 +107,66 @@ export const useNotifications = () => {
     }
   };
 
-  // Subscribe to real-time notifications
+  // Initial fetch and setup real-time updates
   useEffect(() => {
     if (!user) return;
 
-    // Set up real-time subscription
-    const subscription = supabase
-      .channel('public:notifications')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${user.id}`,
-      }, (payload) => {
-        const newNotification = payload.new as Notification;
-        setNotifications(prev => [newNotification, ...prev]);
-        setUnreadCount(prev => prev + 1);
-        toast.success(`New notification: ${newNotification.title}`);
-      })
-      .subscribe();
-
-    // Initial fetch
+    console.log("Setting up notifications for user:", user.id);
     fetchNotifications();
 
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('db_notifications')
+      .on('postgres_changes', 
+        {
+          event: '*', // Listen for all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        }, 
+        (payload) => {
+          console.log('Notification change received!', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            // Add new notification to the list
+            const newNotification = payload.new as Notification;
+            setNotifications(prev => [newNotification, ...prev]);
+            setUnreadCount(prev => prev + 1);
+            toast.success(`New notification: ${newNotification.title}`);
+          } 
+          else if (payload.eventType === 'UPDATE') {
+            // Update the notification in the list
+            const updatedNotification = payload.new as Notification;
+            setNotifications(prev => 
+              prev.map(n => n.id === updatedNotification.id ? updatedNotification : n)
+            );
+            // Recalculate unread count
+            setNotifications(notifications => {
+              setUnreadCount(notifications.filter(n => !n.is_read).length);
+              return notifications;
+            });
+          }
+          else if (payload.eventType === 'DELETE') {
+            // Remove the notification from the list
+            const oldNotification = payload.old as Notification;
+            setNotifications(prev => 
+              prev.filter(n => n.id !== oldNotification.id)
+            );
+            // Recalculate unread count
+            setNotifications(notifications => {
+              setUnreadCount(notifications.filter(n => !n.is_read).length);
+              return notifications;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log("Notification subscription status:", status);
+      });
+
+    // Clean up on unmount
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
