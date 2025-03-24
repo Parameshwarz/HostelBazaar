@@ -36,6 +36,8 @@ import BrowseMerch from './pages/BrowseMerch';
 import StyleFeedPage from './pages/StyleFeed';
 import Matches from './pages/Matches';
 import { initAuth } from './store/initAuth';
+import SignOutPage from './pages/SignOutPage';
+import VercelSignOutFix from './components/VercelSignOutFix';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -66,6 +68,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg-primary">
       <Navbar />
+      <VercelSignOutFix />
       <AnimatePresence mode="wait">
         <motion.div
           key={location.pathname}
@@ -122,6 +125,7 @@ function AppContent() {
               <Route path="/trade" element={<Trade />} />
               <Route path="/requests" element={<Requests />} />
               <Route path="/style-feed" element={<StyleFeedPage />} />
+              <Route path="/signout" element={<SignOutPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

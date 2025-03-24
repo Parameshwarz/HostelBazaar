@@ -8,8 +8,9 @@ import { useAuthStore } from '../store/authStore';
  * 1. Signing out from Supabase
  * 2. Clearing local storage
  * 3. Clearing session storage
- * 4. Resetting Zustand auth store
- * 5. Redirecting to home page
+ * 4. Clearing cookies
+ * 5. Resetting Zustand auth store
+ * 6. Redirecting to home page
  */
 export const signOutCompletely = async (): Promise<void> => {
   try {
@@ -22,16 +23,55 @@ export const signOutCompletely = async (): Promise<void> => {
     console.error('Exception during Supabase sign out:', err);
   } finally {
     // 2. Clear all auth-related items from localStorage
-    localStorage.removeItem('hostelbazaar_auth');
-    localStorage.removeItem('supabase.auth.token');
+    // Clear any possible key variations that might exist
+    const keysToRemove = [
+      'hostelbazaar_auth',
+      'supabase.auth.token',
+      'sb-localhost-auth-token',
+      'sb:token',
+      'supabase.auth.refreshToken',
+      'supabase.auth.accessToken',
+      'supabase.session',
+      // Add potential Vercel-specific keys
+      'supabase-auth-token',
+      'sb-' + window.location.hostname.replace(/[^a-zA-Z0-9]/g, '-') + '-auth-token'
+    ];
+    
+    keysToRemove.forEach(key => {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        console.error(`Failed to remove ${key} from localStorage`, e);
+      }
+    });
     
     // 3. Clear session storage
-    sessionStorage.removeItem('hostelbazaar-auth');
+    try {
+      sessionStorage.clear(); // Clear everything to be safe
+    } catch (e) {
+      console.error('Failed to clear sessionStorage', e);
+    }
     
-    // 4. Reset Zustand auth store
+    // 4. Clear cookies that might be related to auth
+    document.cookie.split(";").forEach(function(c) {
+      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    
+    // 5. Reset Zustand auth store
     useAuthStore.getState().setUser(null);
     
-    // 5. Redirect to home page
-    window.location.href = '/';
+    // 6. Force a hard reload rather than just a redirect
+    // This ensures the app state is completely reset
+    setTimeout(() => {
+      window.location.href = '/';
+      
+      // If we're in production (probably Vercel), try an alternative approach after a small delay
+      if (process.env.NODE_ENV === 'production') {
+        setTimeout(() => {
+          window.location.replace('/');
+          console.log('Forcing second redirect in production environment');
+        }, 300);
+      }
+    }, 100);
   }
 }; 

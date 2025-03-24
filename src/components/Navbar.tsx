@@ -871,8 +871,13 @@ export default function Navbar() {
                               <button
                                 onClick={async () => {
                                   try {
-                                    // Use the centralized sign out function
-                                    await signOutCompletely();
+                                    // In production (Vercel), use the dedicated sign out page
+                                    if (process.env.NODE_ENV === 'production') {
+                                      window.location.href = '/signout';
+                                    } else {
+                                      // In development, use the regular sign out function
+                                      await signOutCompletely();
+                                    }
                                   } catch (error) {
                                     console.error('Error during sign out:', error);
                                     // Force redirect even if there's an error
