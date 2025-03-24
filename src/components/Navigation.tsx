@@ -3,6 +3,7 @@ import { ShoppingBag, Search, User, LogOut, MessageCircle, Package } from 'lucid
 import { useState, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../lib/supabase';
 
 export default function Navigation() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,31 +98,48 @@ export default function Navigation() {
                       'sb-localhost-auth-token', 
                       'sb:token',
                       'supabase.auth.refreshToken',
-                      'supabase.auth.accessToken'
+                      'supabase.auth.accessToken',
+                      // Safari-specific items
+                      'sb-' + window.location.hostname + '-auth-token'
                     ];
                     
-                    // Clear only auth-related keys from localStorage
-                    authKeysToRemove.forEach(key => {
-                      localStorage.removeItem(key);
-                    });
-                    
-                    // Clear only auth-related items from sessionStorage
-                    authKeysToRemove.forEach(key => {
-                      sessionStorage.removeItem(key);
-                    });
-                    
-                    // Force removal of auth cookies
-                    document.cookie.split(";").forEach(c => {
-                      if (c.includes('auth') || c.includes('token') || c.includes('sb-')) {
-                        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                    // Clear all keys from localStorage - needed for Safari
+                    for (let i = 0; i < localStorage.length; i++) {
+                      const key = localStorage.key(i);
+                      if (key && (key.includes('auth') || key.includes('token') || 
+                          key.includes('sb-') || key.includes('supabase'))) {
+                        localStorage.removeItem(key);
                       }
+                    }
+                    
+                    // Clear ALL session storage (Safari's handling is different)
+                    sessionStorage.clear();
+                    
+                    // Force removal of auth cookies - handle Safari specially
+                    document.cookie.split(";").forEach(c => {
+                      // Safari requires more specific cookie clearing
+                      const cookieName = c.split("=")[0].trim();
+                      
+                      // Delete cookie with all possible path/domain combinations
+                      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+                      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+                      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
                     });
+                    
+                    // Call Supabase sign out directly (needed for Safari)
+                    try {
+                      supabase.auth.signOut();
+                    } catch (e) {
+                      console.error("Error signing out from Supabase:", e);
+                    }
                     
                     // Reset auth state
                     user && setUser(null);
                     
-                    // Hard reload to homepage
-                    window.location.href = '/';
+                    // Safari sometimes caches the page - force a full reload, not just navigation
+                    setTimeout(() => {
+                      window.location.href = window.location.origin + '/?t=' + new Date().getTime();
+                    }, 100);
                   }}
                   className="text-gray-600 hover:text-gray-900"
                 >
