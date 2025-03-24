@@ -870,13 +870,32 @@ export default function Navbar() {
                             {({ active }) => (
                               <button
                                 onClick={() => {
-                                  // Clear everything
-                                  localStorage.clear();
-                                  sessionStorage.clear();
+                                  // Only clear auth-related items
+                                  const authKeysToRemove = [
+                                    'hostelbazaar-auth',
+                                    'hostelbazaar_auth',
+                                    'supabase.auth.token',
+                                    'sb-localhost-auth-token', 
+                                    'sb:token',
+                                    'supabase.auth.refreshToken',
+                                    'supabase.auth.accessToken'
+                                  ];
                                   
-                                  // Force removal of auth tokens
+                                  // Clear only auth-related keys from localStorage
+                                  authKeysToRemove.forEach(key => {
+                                    localStorage.removeItem(key);
+                                  });
+                                  
+                                  // Clear only auth-related items from sessionStorage
+                                  authKeysToRemove.forEach(key => {
+                                    sessionStorage.removeItem(key);
+                                  });
+                                  
+                                  // Force removal of auth cookies
                                   document.cookie.split(";").forEach(c => {
-                                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                                    if (c.includes('auth') || c.includes('token') || c.includes('sb-')) {
+                                      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                                    }
                                   });
                                   
                                   // Reset auth state
