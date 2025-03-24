@@ -780,6 +780,35 @@ export default function Browse() {
                       <X className="w-3.5 h-3.5" />
                     </motion.button>
                   ))}
+                  {filters.subcategories.map(subcat => {
+                    // Find the parent category and subcategory details
+                    const parentCategory = categories.find(cat => 
+                      cat.subcategories?.some(sub => sub.slug === subcat)
+                    );
+                    const subcategory = parentCategory?.subcategories?.find(sub => sub.slug === subcat);
+                    
+                    if (!subcategory) return null;
+                    
+                    return (
+                      <motion.button
+                        key={subcat}
+                        initial={{ scale: 0.8 }}
+                        animate={{ scale: 1 }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleFilterChange({
+                          subcategories: filters.subcategories.filter(s => s !== subcat)
+                        })}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-50 to-fuchsia-50 
+                          border border-purple-100 rounded-full text-sm font-medium text-purple-600 
+                          hover:shadow-md transition-all duration-200"
+                      >
+                        <Tag className="w-3.5 h-3.5" />
+                        {subcategory.name}
+                        <X className="w-3.5 h-3.5" />
+                      </motion.button>
+                    );
+                  })}
                   {filters.conditions.map(condition => (
                     <motion.button
                       key={condition}
