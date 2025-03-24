@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -35,6 +35,7 @@ import SmartRecommendations from './components/SmartRecommendations';
 import BrowseMerch from './pages/BrowseMerch';
 import StyleFeedPage from './pages/StyleFeed';
 import Matches from './pages/Matches';
+import { initAuth } from './store/initAuth';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -137,6 +138,16 @@ function AppContent() {
 }
 
 export default function App() {
+  // Initialize auth when app loads
+  useEffect(() => {
+    const subscription = initAuth();
+    
+    // Cleanup subscription on unmount
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <Router>
       <AuthProvider>

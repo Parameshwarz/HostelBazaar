@@ -44,38 +44,37 @@ export default function Register() {
       await new Promise(resolve => setTimeout(resolve, 3000));
 
       try {
-        // Create profile using the auth user's ID
+        // Create profile
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({
+          .insert({
             id: data.user.id,
-            username,
-            email,
-            created_at: new Date().toISOString()
-          }, {
-            onConflict: 'id'
+            username: username,
+            email: email,
           });
 
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
-          // If profile creation fails, we should still allow the user to proceed
-          // They can complete their profile later
-          toast.error('Account created but profile setup incomplete. Please complete your profile later.');
-        } else {
-          // Set user in store only if profile was created successfully
-          setUser({
-            id: data.user.id,
-            email: data.user.email!,
-            username
-          });
-          toast.success('Welcome to Hostel Bazaar!');
-        }
+        if (profileError) throw profileError;
+
+        // Set user in state
+        setUser({
+          id: data.user.id,
+          email: email,
+          username: username,
+        });
+
+        // Also store in localStorage for persistence
+        localStorage.setItem('hostelbazaar_auth', JSON.stringify({
+          userId: data.user.id,
+          email: email,
+          username: username
+        }));
+
+        toast.success('Account created!');
+        navigate('/');
       } catch (profileCreateError) {
         console.error('Error during profile creation:', profileCreateError);
         toast.error('Account created but profile setup failed. Please try logging in again later.');
       }
-
-      navigate('/');
     } catch (error: any) {
       console.error('Registration error:', error);
       toast.error(error.message || 'Registration failed');

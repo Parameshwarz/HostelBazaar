@@ -24,11 +24,16 @@ export default function Login() {
       if (error) throw error;
 
       if (data.user) {
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', data.user.id)
           .single();
+
+        if (profileError) {
+          console.error('Error fetching profile:', profileError);
+          throw new Error('Failed to fetch user profile');
+        }
 
         setUser({
           id: data.user.id,
@@ -36,6 +41,12 @@ export default function Login() {
           username: profile.username,
           avatar_url: profile.avatar_url,
         });
+        
+        localStorage.setItem('hostelbazaar_auth', JSON.stringify({
+          userId: data.user.id,
+          email: data.user.email,
+          username: profile.username
+        }));
         
         toast.success('Welcome back!');
         handleLoginSuccess();

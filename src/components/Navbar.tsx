@@ -18,6 +18,7 @@ import { Menu, Transition } from '@headlessui/react';
 import DarkModeToggle from './DarkModeToggle';
 import useSound from 'use-sound';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { supabase } from '../lib/supabase';
 
 interface NavLink {
   name: string;
@@ -68,7 +69,7 @@ interface Notification {
 }
 
 export default function Navbar() {
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, setUser } = useAuthStore();
   const unreadCount = useUnreadMessages();
   const navigate = useNavigate();
   const location = useLocation();
@@ -390,6 +391,40 @@ export default function Navbar() {
 
   // Add scroll progress tracking
   const { scrollYProgress } = useScroll();
+
+  // Check localStorage for auth info if user is null
+  useEffect(() => {
+    if (!user) {
+      const storedAuth = localStorage.getItem('hostelbazaar_auth');
+      if (storedAuth) {
+        try {
+          const authData = JSON.parse(storedAuth);
+          console.log('Restoring auth from localStorage:', authData);
+          
+          // Fetch full profile from Supabase
+          supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authData.userId)
+            .single()
+            .then(({ data: profile, error }) => {
+              if (!error && profile) {
+                setUser({
+                  id: authData.userId,
+                  email: authData.email,
+                  username: profile.username,
+                  avatar_url: profile.avatar_url
+                });
+              } else {
+                console.error('Error restoring profile from localStorage:', error);
+              }
+            });
+        } catch (err) {
+          console.error('Failed to parse stored auth:', err);
+        }
+      }
+    }
+  }, [user, setUser]);
 
   return (
     <>
