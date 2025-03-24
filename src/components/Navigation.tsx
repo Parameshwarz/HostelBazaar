@@ -3,12 +3,11 @@ import { ShoppingBag, Search, User, LogOut, MessageCircle, Package } from 'lucid
 import { useState, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { signOutCompletely } from '../utils/auth';
 
 export default function Navigation() {
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
-  const { user, signOut } = useAuthStore();
+  const { user, setUser } = useAuthStore();
 
   const handleSearch = () => {
     if (!searchTerm.trim()) return;
@@ -89,19 +88,21 @@ export default function Navigation() {
                   <User className="h-6 w-6" />
                 </Link>
                 <button
-                  onClick={async () => {
-                    try {
-                      // In production (Vercel), use the dedicated sign out page
-                      if (process.env.NODE_ENV === 'production') {
-                        window.location.href = '/signout';
-                      } else {
-                        // In development, use the regular sign out function
-                        await signOutCompletely();
-                      }
-                    } catch (error) {
-                      console.error('Error during sign out:', error);
-                      window.location.href = '/';
-                    }
+                  onClick={() => {
+                    // Clear everything
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    
+                    // Force removal of auth tokens
+                    document.cookie.split(";").forEach(c => {
+                      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                    });
+                    
+                    // Reset auth state
+                    user && setUser(null);
+                    
+                    // Hard reload to homepage
+                    window.location.href = '/';
                   }}
                   className="text-gray-600 hover:text-gray-900"
                 >

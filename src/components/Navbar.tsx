@@ -869,20 +869,21 @@ export default function Navbar() {
                           <Menu.Item>
                             {({ active }) => (
                               <button
-                                onClick={async () => {
-                                  try {
-                                    // In production (Vercel), use the dedicated sign out page
-                                    if (process.env.NODE_ENV === 'production') {
-                                      window.location.href = '/signout';
-                                    } else {
-                                      // In development, use the regular sign out function
-                                      await signOutCompletely();
-                                    }
-                                  } catch (error) {
-                                    console.error('Error during sign out:', error);
-                                    // Force redirect even if there's an error
-                                    window.location.href = '/';
-                                  }
+                                onClick={() => {
+                                  // Clear everything
+                                  localStorage.clear();
+                                  sessionStorage.clear();
+                                  
+                                  // Force removal of auth tokens
+                                  document.cookie.split(";").forEach(c => {
+                                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                                  });
+                                  
+                                  // Reset auth state
+                                  setUser(null);
+                                  
+                                  // Hard reload to homepage
+                                  window.location.href = '/';
                                 }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${
                                   active 
