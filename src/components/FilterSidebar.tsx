@@ -153,9 +153,6 @@ export default function FilterSidebar({
 
   // Handle subcategory selection
   const handleSubcategoryChange = (categorySlug: string, subSlug: string, isChecked: boolean) => {
-    console.log(`Subcategory change: ${subSlug} - Checked: ${isChecked}`);
-    console.log('Current filters:', filters);
-    
     let newCategories = [...filters.categories];
     if (isChecked && !newCategories.includes(categorySlug)) {
       newCategories.push(categorySlug);
@@ -166,8 +163,6 @@ export default function FilterSidebar({
     const newSubcategories = isChecked
       ? [...filters.subcategories, subSlug]
       : filters.subcategories.filter(s => s !== subSlug);
-    
-    console.log('New subcategories:', newSubcategories);
     
     if (!isChecked && category?.subcategories) {
       const remainingSubcategories = category.subcategories
@@ -185,7 +180,6 @@ export default function FilterSidebar({
       subcategories: newSubcategories
     };
     
-    console.log('Applying updated filters:', updatedFilters);
     onFilterChange(updatedFilters);
   };
 

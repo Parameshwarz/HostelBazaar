@@ -172,15 +172,6 @@ export const ItemsGrid = ({
         totalCount={filters.totalCount}
       />
       
-      {/* Debug info - only visible during development */}
-      {process.env.NODE_ENV === 'development' && filters.subcategories && filters.subcategories.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-yellow-700">
-            <strong>Debug:</strong> Filtering by subcategories: {filters.subcategories.join(', ')}
-          </p>
-        </div>
-      )}
-
       {/* Featured Items - Only show when not searching */}
       {!filters.search && featuredItems.length > 0 && (
         <FeaturedItems

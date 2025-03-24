@@ -580,43 +580,26 @@ export const searchAllContent = async (query: string, filters: SearchParams, use
 
     // Apply subcategory filter if present
     if (updatedFilters.subcategories && updatedFilters.subcategories.length > 0) {
-      console.log(`Filtering by subcategories: ${updatedFilters.subcategories.join(', ')}`);
-      
-      try {
-        const { data: subcategoryData, error: subcatError } = await supabase
-          .from('subcategories')
-          .select('id, slug, name')
-          .in('slug', updatedFilters.subcategories);
-  
-        if (subcatError) {
-          console.error('Error fetching subcategory data:', subcatError);
-        }
+      // Fetch subcategory data to get IDs from slugs
+      const { data: subcategoryData, error: subcatError } = await supabase
+        .from('subcategories')
+        .select('id, slug, name')
+        .in('slug', updatedFilters.subcategories);
         
-        console.log('Fetched subcategory data:', subcategoryData);
-  
-        if (subcategoryData && subcategoryData.length > 0) {
-          const subcategoryIds = subcategoryData.map(subcat => subcat.id);
-          console.log(`Applying subcategory filter with IDs: ${subcategoryIds.join(', ')}`);
-          
-          // Set the subcategory_id filter directly
-          queryBuilder = queryBuilder.in('subcategory_id', subcategoryIds);
-          
-          // Add special logging to verify the query is built correctly
-          console.log('Query includes subcategory filter');
-        } else {
-          console.log('No matching subcategory IDs found for the provided slugs');
-          
-          // If we couldn't find the subcategory IDs, return empty results
-          // This ensures we don't show ALL items when a specific subcategory was selected
-          return {
-            items: [],
-            hasExactMatches: false,
-            total: 0,
-            type: 'no_results'
-          };
-        }
-      } catch (subError) {
-        console.error('Error in subcategory filtering:', subError);
+      if (subcatError) {
+        console.error('Error fetching subcategory data:', subcatError);
+        return { items: [], hasExactMatches: false, type: 'error' };
+      }
+      
+      // Extract subcategory IDs
+      const subcategoryIds = subcategoryData?.map(sub => sub.id) || [];
+      
+      // Filter by subcategory IDs
+      if (subcategoryIds.length > 0) {
+        queryBuilder = queryBuilder.in('subcategory_id', subcategoryIds);
+      } else {
+        // If subcategories are specified but none match, return empty result
+        return { items: [], hasExactMatches: false, type: 'no_results' };
       }
     }
 
