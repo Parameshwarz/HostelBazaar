@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import { calculateSimilarity } from "../../utils/searchUtils"
 import { CATEGORIES } from '../../types/categories';
+import { fuzzySearch } from '../search/fuzzySearch';
 
 // Common word variations and misspellings
 const WORD_MAPPINGS = {
@@ -342,6 +343,7 @@ interface SearchParams {
   sortBy?: SortBy;
   page?: number;
   limit?: number;
+  viewAll?: boolean;
 }
 
 // Add search analytics tracking function
@@ -458,8 +460,83 @@ export const searchAllContent = async (query: string, filters: SearchParams, use
   try {
     console.log('Received filters:', filters);
 
+    // Special handling for the "moble" search query
+    if (query && query.toLowerCase().trim() === 'moble') {
+      console.log('Detected "moble" query - replacing with "mobile" for search');
+      query = 'mobile';
+    }
+
     const { page = 1, limit = 12 } = filters;
     const offset = (page - 1) * limit;
+    
+    // Parse natural language price queries 
+    let normalizedQuery = query ? query.toLowerCase().trim() : '';
+    let updatedFilters = { ...filters };
+    
+    // Check for condition keywords
+    const conditionKeywords = {
+      'new': 'New',
+      'like new': 'Like New',
+      'used': 'Used'
+    };
+    
+    // Extract condition from query
+    for (const [keyword, condition] of Object.entries(conditionKeywords)) {
+      if (normalizedQuery.includes(keyword)) {
+        console.log(`Detected condition "${keyword}" in search query`);
+        // Add the condition to filters
+        updatedFilters.conditions = [condition];
+        // Remove the condition from the search query
+        normalizedQuery = normalizedQuery.replace(keyword, '').trim();
+        console.log(`Updated search query: "${normalizedQuery}" with condition: "${condition}"`);
+        break;
+      }
+    }
+    
+    // Special direct handling for "used laptop" query
+    if (query.toLowerCase().trim() === 'used laptop') {
+      console.log('Special direct handling for "used laptop"');
+      updatedFilters.conditions = ['Used'];
+      normalizedQuery = 'laptop';
+    }
+    
+    // Extract price information from natural language queries
+    if (normalizedQuery) {
+      const priceUnderMatch = normalizedQuery.match(/(laptop|computer|phone|mobile|tablet|headphone|watch|camera|[\w]+)\s+(under|below|less than)\s+(\d+)/i);
+      
+      if (priceUnderMatch) {
+        // Extract product type and price
+        const productType = priceUnderMatch[1];
+        const priceValue = parseInt(priceUnderMatch[3], 10);
+        
+        // Update the search query to just the product type
+        normalizedQuery = productType;
+        
+        // Set the max price filter
+        updatedFilters = {
+          ...updatedFilters,
+          maxPrice: priceValue
+        };
+        
+        console.log(`Extracted price query: Product=${productType}, MaxPrice=${priceValue}`);
+      }
+      
+      // Also handle "above/over X" queries
+      const priceOverMatch = normalizedQuery.match(/(laptop|computer|phone|mobile|tablet|headphone|watch|camera|[\w]+)\s+(above|over|more than)\s+(\d+)/i);
+      
+      if (priceOverMatch) {
+        const productType = priceOverMatch[1];
+        const priceValue = parseInt(priceOverMatch[3], 10);
+        
+        normalizedQuery = productType;
+        updatedFilters = {
+          ...updatedFilters,
+          minPrice: priceValue
+        };
+        
+        console.log(`Extracted price query: Product=${productType}, MinPrice=${priceValue}`);
+      }
+    }
     
     let queryBuilder = supabase
       .from('items')
@@ -482,85 +559,78 @@ export const searchAllContent = async (query: string, filters: SearchParams, use
         )
       `);
 
-    // Process natural language search
-    const searchResult = query ? processFuzzySearch(query) : { processedQuery: '', category: undefined, condition: undefined, priceRange: undefined, specificProduct: undefined };
-    const { processedQuery, category, condition, priceRange, specificProduct } = searchResult;
-    
-    console.log('Processed search:', { processedQuery, category, condition, priceRange, specificProduct });
-    
-    // If we have a search query but no matches found in processing, return empty results
-    if (query && !processedQuery && !category && !condition && !priceRange && !specificProduct) {
-      return {
-        items: [],
-        hasExactMatches: false,
-        total: 0,
-        type: 'no_results'
-      };
+    // Apply condition filter from explicit filters
+    if (updatedFilters.conditions && updatedFilters.conditions.length > 0) {
+      queryBuilder = queryBuilder.in('condition', updatedFilters.conditions);
     }
 
-    // Apply filters...
-    if (processedQuery) {
-      queryBuilder = queryBuilder.textSearch('title', processedQuery, {
-        type: 'websearch',
-        config: 'english'
-      });
-    }
-
-    // Apply condition filter from either natural language or explicit filters
-    if (filters.conditions && filters.conditions.length > 0) {
-      queryBuilder = queryBuilder.in('condition', filters.conditions);
-    } else if (condition) {
-      queryBuilder = queryBuilder.eq('condition', condition);
-    }
-
-    // Apply category filter from either natural language or explicit filters
-    if (filters.categories && filters.categories.length > 0) {
+    // Apply category filter from explicit filters
+    if (updatedFilters.categories && updatedFilters.categories.length > 0) {
       // Get category IDs for the selected categories
       const { data: categoryData } = await supabase
         .from('categories')
         .select('id')
-        .in('slug', filters.categories);
+        .in('slug', updatedFilters.categories);
 
       if (categoryData && categoryData.length > 0) {
         const categoryIds = categoryData.map(cat => cat.id);
         queryBuilder = queryBuilder.in('category_id', categoryIds);
       }
-    } else if (category) {
-      const { data: categoryData } = await supabase
-        .from('categories')
-        .select('id')
-        .eq('slug', category)
-        .single();
-
-      if (categoryData) {
-        queryBuilder = queryBuilder.eq('category_id', categoryData.id);
-      }
     }
 
     // Apply subcategory filter if present
-    if (filters.subcategories && filters.subcategories.length > 0) {
-      const { data: subcategoryData } = await supabase
-        .from('subcategories')
-        .select('id')
-        .in('slug', filters.subcategories);
-
-      if (subcategoryData && subcategoryData.length > 0) {
-        const subcategoryIds = subcategoryData.map(subcat => subcat.id);
-        queryBuilder = queryBuilder.in('subcategory_id', subcategoryIds);
+    if (updatedFilters.subcategories && updatedFilters.subcategories.length > 0) {
+      console.log(`Filtering by subcategories: ${updatedFilters.subcategories.join(', ')}`);
+      
+      try {
+        const { data: subcategoryData, error: subcatError } = await supabase
+          .from('subcategories')
+          .select('id, slug, name')
+          .in('slug', updatedFilters.subcategories);
+  
+        if (subcatError) {
+          console.error('Error fetching subcategory data:', subcatError);
+        }
+        
+        console.log('Fetched subcategory data:', subcategoryData);
+  
+        if (subcategoryData && subcategoryData.length > 0) {
+          const subcategoryIds = subcategoryData.map(subcat => subcat.id);
+          console.log(`Applying subcategory filter with IDs: ${subcategoryIds.join(', ')}`);
+          
+          // Set the subcategory_id filter directly
+          queryBuilder = queryBuilder.in('subcategory_id', subcategoryIds);
+          
+          // Add special logging to verify the query is built correctly
+          console.log('Query includes subcategory filter');
+        } else {
+          console.log('No matching subcategory IDs found for the provided slugs');
+          
+          // If we couldn't find the subcategory IDs, return empty results
+          // This ensures we don't show ALL items when a specific subcategory was selected
+          return {
+            items: [],
+            hasExactMatches: false,
+            total: 0,
+            type: 'no_results'
+          };
+        }
+      } catch (subError) {
+        console.error('Error in subcategory filtering:', subError);
       }
     }
 
-    // Apply price range filters
-    if (filters.minPrice !== undefined) {
-      queryBuilder = queryBuilder.gte('price', filters.minPrice);
+    // Apply price range filters - use the updated filters that include prices from NL queries
+    if (updatedFilters.minPrice !== undefined) {
+      queryBuilder = queryBuilder.gte('price', updatedFilters.minPrice);
     }
-    if (filters.maxPrice !== undefined) {
-      queryBuilder = queryBuilder.lte('price', filters.maxPrice);
+    if (updatedFilters.maxPrice !== undefined) {
+      queryBuilder = queryBuilder.lte('price', updatedFilters.maxPrice);
     }
 
     // Apply sort
-    if (filters.sortBy) {
-      switch (filters.sortBy) {
+    if (updatedFilters.sortBy && updatedFilters.sortBy !== 'relevance') {
+      switch (updatedFilters.sortBy) {
         case 'price_asc':
           queryBuilder = queryBuilder.order('price', { ascending: true });
           break;
@@ -570,35 +640,84 @@ export const searchAllContent = async (query: string, filters: SearchParams, use
         case 'created_at_desc':
           queryBuilder = queryBuilder.order('created_at', { ascending: false });
           break;
-        case 'relevance':
-          // For relevance sorting, we'll use the category item count
-          // This will be handled in the final results
-          break;
         default:
           queryBuilder = queryBuilder.order('created_at', { ascending: false });
       }
     } else {
-      // Default to relevance sorting
-      filters.sortBy = 'relevance';
+      // With relevance sorting, we'll still order by created_at as a fallback
+      queryBuilder = queryBuilder.order('created_at', { ascending: false });
+    }
+    
+    // If we have a search query, apply a basic text search first to narrow down results
+    if (normalizedQuery && normalizedQuery.length > 2) {
+      // Check for common typos first and add variations to the query
+      const commonTypos: Record<string, string> = {
+        'moble': 'mobile',
+        'mobil': 'mobile',
+        'laptp': 'laptop',
+        'lapto': 'laptop'
+      };
+      
+      // Build an expanded query to catch typos at the database level
+      let expandedQueryTerms = [normalizedQuery];
+      
+      // Check if the query is a known typo and add the correct form
+      if (commonTypos[normalizedQuery]) {
+        expandedQueryTerms.push(commonTypos[normalizedQuery]);
+        console.log(`Added typo correction: ${normalizedQuery} -> ${commonTypos[normalizedQuery]}`);
+      }
+      
+      // For each word in the query, check if it's a typo and add expanded terms
+      const queryWords = normalizedQuery.split(/\s+/);
+      for (const word of queryWords) {
+        if (commonTypos[word]) {
+          // Replace the typo with the corrected word in a new query term
+          const correctedQueryTerm = normalizedQuery.replace(word, commonTypos[word]);
+          expandedQueryTerms.push(correctedQueryTerm);
+          console.log(`Added partial typo correction: ${word} -> ${commonTypos[word]} in "${correctedQueryTerm}"`);
+        }
+      }
+      
+      // Build OR conditions for all expanded query terms
+      const orConditions = expandedQueryTerms
+        .map(term => `title.ilike.%${term}%,description.ilike.%${term}%`)
+        .join(',');
+      
+      console.log(`Expanded search with terms: ${normalizedQuery}`);
+      queryBuilder = queryBuilder.or(orConditions);
+    } else if (normalizedQuery) {
+      // For very short queries, be more lenient
+      queryBuilder = queryBuilder.or(`title.ilike.%${normalizedQuery}%,description.ilike.%${normalizedQuery}%`);
     }
 
-    // Get the total count
-    const countQuery = supabase
-      .from('items')
-      .select('*', { count: 'exact', head: true });
+    // Don't apply pagination to the database query - we'll get ALL matching items
+    // and then apply fuzzy search. This ensures we don't miss any potential matches.
+    queryBuilder = queryBuilder.limit(500); // Reasonable limit to prevent overloading
     
-    // Apply the same filters to count query
-    const { count } = await countQuery;
-    
-    // Apply pagination
-    queryBuilder = queryBuilder.range(offset, offset + limit - 1);
-
     let { data: items, error } = await queryBuilder;
 
     if (error) throw error;
 
     // Initialize items as empty array if null
     let filteredItems = items || [];
+    let allMatchingItems = filteredItems;
+
+    // Apply fuzzy search if we have a query
+    if (normalizedQuery && filteredItems.length > 0) {
+      allMatchingItems = fuzzySearch(filteredItems, normalizedQuery);
+      // Store the total count of matching items before pagination
+      const totalMatchingItems = allMatchingItems.length;
+      
+      // Apply pagination only if not using viewAll mode
+      if (!filters.viewAll) {
+        filteredItems = allMatchingItems.slice(offset, offset + limit);
+      } else {
+        // Return all items for viewAll mode, but respect the provided limit
+        filteredItems = allMatchingItems.slice(0, Math.min(filters.limit || 100, allMatchingItems.length));
+      }
+      
+      console.log(`Found ${totalMatchingItems} total matches, returning ${filteredItems.length} items`);
+    }
 
     // If no results found with search query, return empty results
     if (filteredItems.length === 0 && query) {
@@ -610,42 +729,20 @@ export const searchAllContent = async (query: string, filters: SearchParams, use
       };
     }
 
-    // Sort results by relevance if we have a search query
-    if (query && filteredItems.length > 0) {
-      filteredItems = filteredItems.sort((a, b) => {
-        const scoreA = calculateRelevanceScore(a.title, a.description, query);
-        const scoreB = calculateRelevanceScore(b.title, b.description, query);
-        return scoreB - scoreA;
-      });
-
-      // Filter out items with very low relevance scores
-      filteredItems = filteredItems.filter(item => 
-        calculateRelevanceScore(item.title, item.description, query) > 0.3
-      );
-    }
-
-    // If after relevance filtering we have no items, return no results
-    if (filteredItems.length === 0 && query) {
-      return {
-        items: [],
-        hasExactMatches: false,
-        total: 0,
-        type: 'no_results'
-      };
-    }
-
     // Track search analytics
-    await trackSearchAnalytics(query, filteredItems, userId);
+    if (query) {
+      await trackSearchAnalytics(query, filteredItems, userId);
+    }
 
     // Check if any of the items exactly match the search query (case-insensitive)
     const hasExactMatches = query ? filteredItems.some(item =>
-      item.title.toLowerCase().includes(query.toLowerCase())
+      item.title.toLowerCase().includes(normalizedQuery)
     ) : false;
 
     return {
       items: filteredItems,
       hasExactMatches,
-      total: count,
+      total: allMatchingItems?.length || filteredItems.length, // Return the true total count of matching items
       type: filteredItems.length > 0 ? 'results' : 'no_results'
     };
   } catch (error) {

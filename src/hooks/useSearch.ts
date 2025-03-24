@@ -87,21 +87,6 @@ export function useSearch({ onSearch, onImageSearch, defaultValue = '' }: UseSea
     updateSearchHistory();
   }, [getRecentSearches, getPopularSearches]);
 
-  const handleImageUpload = async (file: File) => {
-    if (!onImageSearch) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      await onImageSearch(file);
-    } catch (err) {
-      setError('Failed to process image. Please try again.');
-      toast.error('Failed to process image');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleVoiceSearch = useCallback(() => {
     if (isListening) {
       stopListening();
@@ -132,7 +117,6 @@ export function useSearch({ onSearch, onImageSearch, defaultValue = '' }: UseSea
     setShowSuggestions,
     handleSearch,
     handleVoiceSearch,
-    handleImageUpload,
     recentSearches,
     popularSearches,
     removeFromHistory: handleRemoveFromHistory,

@@ -153,6 +153,9 @@ export default function FilterSidebar({
 
   // Handle subcategory selection
   const handleSubcategoryChange = (categorySlug: string, subSlug: string, isChecked: boolean) => {
+    console.log(`Subcategory change: ${subSlug} - Checked: ${isChecked}`);
+    console.log('Current filters:', filters);
+    
     let newCategories = [...filters.categories];
     if (isChecked && !newCategories.includes(categorySlug)) {
       newCategories.push(categorySlug);
@@ -164,6 +167,8 @@ export default function FilterSidebar({
       ? [...filters.subcategories, subSlug]
       : filters.subcategories.filter(s => s !== subSlug);
     
+    console.log('New subcategories:', newSubcategories);
+    
     if (!isChecked && category?.subcategories) {
       const remainingSubcategories = category.subcategories
         .map(sub => sub.slug)
@@ -174,10 +179,14 @@ export default function FilterSidebar({
       }
     }
 
-    onFilterChange({ 
+    // Create a new filter object with the updated values
+    const updatedFilters = { 
       categories: newCategories,
       subcategories: newSubcategories
-    });
+    };
+    
+    console.log('Applying updated filters:', updatedFilters);
+    onFilterChange(updatedFilters);
   };
 
   // Toggle category expansion
@@ -262,8 +271,9 @@ export default function FilterSidebar({
                 )}
               </label>
               
-              {category.subcategories && category.subcategories.length > 0 && (
-                <div className="pl-6 space-y-1">
+              {/* Only show subcategories when parent category is selected */}
+              {filters.categories.includes(category.slug) && category.subcategories && category.subcategories.length > 0 && (
+                <div className="pl-6 space-y-1 mt-2">
                   {category.subcategories.map((sub) => (
                     <label key={sub.id} className="flex items-center gap-2 cursor-pointer group">
                       <input
@@ -324,6 +334,38 @@ export default function FilterSidebar({
               />
               <span className="text-sm text-gray-700 group-hover:text-gray-900">
                 {option.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      </FilterSection>
+
+      {/* Condition */}
+      <FilterSection 
+        title="Condition" 
+        icon={<Sparkles className="w-4 h-4 text-amber-500" />}
+        badge={filters.conditions.length}
+      >
+        <div className="space-y-2 pl-2">
+          {[
+            { value: 'New', label: 'New', color: 'text-emerald-600' },
+            { value: 'Like New', label: 'Like New', color: 'text-blue-600' },
+            { value: 'Used', label: 'Used', color: 'text-gray-600' }
+          ].map((condition) => (
+            <label key={condition.value} className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={filters.conditions.includes(condition.value)}
+                onChange={(e) => {
+                  const newConditions = e.target.checked
+                    ? [...filters.conditions, condition.value]
+                    : filters.conditions.filter(c => c !== condition.value);
+                  onFilterChange({ conditions: newConditions });
+                }}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className={`text-sm ${condition.color} group-hover:text-gray-900`}>
+                {condition.label}
               </span>
             </label>
           ))}

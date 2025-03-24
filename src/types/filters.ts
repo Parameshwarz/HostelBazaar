@@ -9,16 +9,19 @@ export interface Filters {
   search: string;
   sortBy: SortOption;
   showWishlisted: boolean;
+  totalCount?: number;
 }
 
 export interface SearchParams {
   categories?: string[];
+  subcategories?: string[];
   conditions?: string[];
   minPrice?: number;
   maxPrice?: number;
   sortBy?: SortOption;
   page?: number;
   limit?: number;
+  viewAll?: boolean;
 }
 
 export const VALID_SORT_VALUES: SortOption[] = ['created_at_desc', 'price_asc', 'price_desc', 'relevance'];

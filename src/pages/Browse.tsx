@@ -194,10 +194,20 @@ export default function Browse() {
   // Enhanced fetch items function
   const fetchItems = async (retryCount = 0) => {
     setIsSearching(true);
+    console.log("Fetching items with filters:", {
+      categories: filters.categories,
+      subcategories: filters.subcategories,
+      conditions: filters.conditions,
+      minPrice: filters.minPrice,
+      maxPrice: filters.maxPrice,
+      search: filters.search
+    });
+    
     try {
       const searchParams: SearchParams = {
         categories: filters.categories,
         conditions: filters.conditions,
+        subcategories: filters.subcategories, // Make sure subcategories are properly passed
         minPrice: filters.minPrice,
         maxPrice: filters.maxPrice,
         sortBy: filters.sortBy,
@@ -206,6 +216,7 @@ export default function Browse() {
       };
 
       const results = await searchAllContent(filters.search, searchParams, user?.id);
+      console.log(`Search returned ${results.items.length} items`);
 
       if (page === 1) {
         setItems(results.items);
@@ -446,11 +457,6 @@ export default function Browse() {
     handleFilterChange(preset.filters);
   };
 
-  const handleImageSearch = useCallback(async (file: File) => {
-    // TODO: Implement image search functionality
-    toast.error('Image search coming soon!');
-  }, []);
-
   const handleQuickView = (item: any) => {
     setSelectedItem(item);
   };
@@ -545,6 +551,180 @@ export default function Browse() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileFiltersOpen]);
 
+  // Add a handleViewAllResults function to show all search results
+  const handleViewAllResults = async () => {
+    console.log("View all results clicked");
+    
+    // Update UI state immediately
+    setIsSearching(true);
+    setHasMore(false);
+    
+    // Create a copy of the current filters without pagination limits
+    const searchAllParams = new URLSearchParams();
+    
+    // Set existing search term and filters
+    if (filters.search) {
+      searchAllParams.set('search', filters.search);
+    }
+    
+    if (filters.categories.length) {
+      filters.categories.forEach((cat: string) => searchAllParams.append('category', cat));
+    }
+    
+    if (filters.conditions.length) {
+      filters.conditions.forEach((cond: string) => searchAllParams.append('condition', cond));
+    }
+    
+    if (filters.minPrice !== undefined) {
+      searchAllParams.set('minPrice', filters.minPrice.toString());
+    }
+    
+    if (filters.maxPrice !== undefined) {
+      searchAllParams.set('maxPrice', filters.maxPrice.toString());
+    }
+    
+    // Add a special parameter to indicate showing all results
+    searchAllParams.set('viewAll', 'true');
+    
+    // Use the existing sortBy if present
+    if (filters.sortBy && filters.sortBy !== 'relevance') {
+      searchAllParams.set('sortBy', filters.sortBy);
+    }
+    
+    // Update URL without triggering navigation
+    setSearchParams(searchAllParams);
+    
+    // Fetch all items directly
+    await fetchAllItems();
+  };
+
+  // Add a function to fetch all items without pagination limit
+  const fetchAllItems = async () => {
+    setIsSearching(true);
+    try {
+      const searchParams: SearchParams = {
+        categories: filters.categories,
+        conditions: filters.conditions,
+        minPrice: filters.minPrice,
+        maxPrice: filters.maxPrice,
+        sortBy: filters.sortBy,
+        // Set a much higher limit to get all matching items
+        limit: 100,
+        page: 1, // Always start from first page
+        viewAll: true // Explicitly set viewAll flag
+      };
+
+      // Directly call the search function
+      const results = await searchAllContent(filters.search, searchParams, user?.id);
+      
+      if (results && results.items) {
+        // Update state with results
+        setItems(results.items);
+        setHasExactMatches(results.hasExactMatches || false);
+        setHasMore(false); // No more pagination needed
+        setFetchError(null);
+        
+        // Update total count for display
+        if (results.total) {
+          setFilters(prev => ({
+            ...prev,
+            totalCount: results.total
+          }));
+        }
+        
+        // Log success
+        console.log(`Found ${results.items.length} total items for "${filters.search}" out of ${results.total} matches`);
+      } else {
+        // Handle empty results
+        setItems([]);
+        toast.error('No items found matching your criteria');
+      }
+    } catch (err: any) {
+      console.error('Error fetching all items:', err);
+      setFetchError({
+        type: 'unknown',
+        message: 'Failed to load all items. Please try again.',
+        retryCount: 0
+      });
+      toast.error('Failed to load all items. Please try again.');
+      setItems([]); // Clear items on error
+    } finally {
+      setIsSearching(false);
+      setPage(1); // Reset to page 1
+    }
+  };
+
+  // Modified useEffect to handle viewAll parameter on page load
+  useEffect(() => {
+    // Check if viewAll parameter is present in URL
+    const viewAllParam = searchParams.get('viewAll');
+    
+    if (viewAllParam === 'true' && filters.search) {
+      // Prevent fetchItems from running by setting isSearching
+      setIsSearching(true);
+      
+      // Use setTimeout to ensure this runs after state updates
+      setTimeout(() => {
+        fetchAllItems().finally(() => {
+          console.log('Finished loading all results');
+        });
+      }, 0);
+    } else {
+      fetchItems();
+    }
+  }, [filters.search, filters.categories, filters.conditions, filters.minPrice, filters.maxPrice, filters.sortBy]);
+
+  // Group items by category and subcategory - but only if not in viewAll mode
+  const groupedItems = items.reduce((acc: any, item) => {
+    // Check if we're in viewAll mode
+    const viewAllParam = searchParams.get('viewAll');
+    const isViewAllMode = viewAllParam === 'true';
+    
+    // If in viewAll mode and searching, don't group by category to show all items
+    if (isViewAllMode && filters.search) {
+      // Just accumulate all items under a single category
+      if (!acc['all-results']) {
+        acc['all-results'] = {
+          name: 'All Results',
+          subcategories: {
+            'all-items': {
+              name: 'All Items',
+              items: []
+            }
+          }
+        };
+      }
+      
+      acc['all-results'].subcategories['all-items'].items.push(item);
+      return acc;
+    }
+    
+    // Normal category grouping (existing code)
+    if (!item.categories) return acc;
+    
+    const categorySlug = item.categories.slug;
+    const categoryName = item.categories.name;
+    const subcategorySlug = item.subcategories?.slug || 'other';
+    const subcategoryName = item.subcategories?.name || 'Other';
+    
+    if (!acc[categorySlug]) {
+      acc[categorySlug] = {
+        name: categoryName,
+        subcategories: {}
+      };
+    }
+    
+    if (!acc[categorySlug].subcategories[subcategorySlug]) {
+      acc[categorySlug].subcategories[subcategorySlug] = {
+        name: subcategoryName,
+        items: []
+      };
+    }
+    
+    acc[categorySlug].subcategories[subcategorySlug].items.push(item);
+    return acc;
+  }, {});
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section with Search */}
@@ -561,7 +741,6 @@ export default function Browse() {
             <div className="relative" ref={searchRef}>
               <EnhancedSearch 
                 onSearch={handleSearch}
-                onImageSearch={handleImageSearch}
                 showHistory={true}
               />
             </div>
@@ -770,6 +949,7 @@ export default function Browse() {
               onQuickView={handleQuickView}
               onContact={handleContact}
               onClearFilters={handleClearFilters}
+              onViewAllResults={handleViewAllResults}
             />
           </div>
         </div>

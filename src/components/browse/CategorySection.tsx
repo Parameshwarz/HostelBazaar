@@ -25,7 +25,7 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-const ITEMS_PER_SUBCATEGORY = 4; // Show 4 items per subcategory
+// Only limit subcategories, not items
 const INITIAL_SUBCATEGORIES = 2; // Show 2 subcategories initially
 
 export const CategorySection = ({
@@ -51,13 +51,6 @@ export const CategorySection = ({
         <h2 className="text-xl font-semibold text-gray-900">
           {categoryName}
         </h2>
-        <Link 
-          to={`/browse?category=${categorySlug}`}
-          className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700"
-        >
-          View all in {categoryName}
-          <ChevronRight className="w-4 h-4" />
-        </Link>
       </div>
 
       {/* Subcategories */}
@@ -69,21 +62,15 @@ export const CategorySection = ({
               <h3 className="font-medium text-gray-700">
                 {subData.name}
               </h3>
-              <Link 
-                to={`/browse?category=${categorySlug}&subcategory=${subSlug}`}
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
-                View all
-              </Link>
             </div>
 
-            {/* Items Grid - Limited items per subcategory */}
+            {/* Items Grid - Show all items */}
             <div className={
               viewMode === 'grid'
                 ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'
                 : 'space-y-4'
             }>
-              {subData.items.slice(0, ITEMS_PER_SUBCATEGORY).map((item: any, index: number) => (
+              {subData.items.map((item: any, index: number) => (
                 <motion.div
                   key={item.id}
                   variants={item}
@@ -144,4 +131,4 @@ export const CategorySection = ({
       </div>
     </section>
   );
-} 
+}; 

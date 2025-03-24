@@ -105,15 +105,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     
-    // Only trigger typing event when input has content
-    if (e.target.value.trim()) {
-      // Improved throttling for typing events - only send when typing actually occurs
-      const now = Date.now();
-      if (onTyping && now - lastTypingTime.current > 1000) {
-        console.log('[TYPING INDICATOR] Triggering typing event');
-        lastTypingTime.current = now;
-        onTyping();
-      }
+    // Always trigger typing when there's input
+    if (e.target.value.trim() && onTyping) {
+      // Frequently trigger typing events - any keystroke triggers it
+      console.log('[TYPING INDICATOR] Triggering typing event');
+      onTyping();
+      // Update last typing time
+      lastTypingTime.current = Date.now();
     }
   };
 

@@ -1,19 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Camera, Mic, Clock, TrendingUp, X, Trash2, RefreshCw } from 'lucide-react';
+import { Search, Mic, Clock, TrendingUp, X, Trash2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../../lib/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface EnhancedMerchSearchProps {
   onSearch: (query: string) => void;
-  onImageSearch?: (file: File) => void;
   initialQuery?: string;
   onClearFilters?: () => void;
 }
 
 export default function EnhancedMerchSearch({ 
   onSearch, 
-  onImageSearch,
   initialQuery = '',
   onClearFilters
 }: EnhancedMerchSearchProps) {
@@ -23,6 +21,7 @@ export default function EnhancedMerchSearch({
   const [isListening, setIsListening] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     fetchRecentSearches();
@@ -35,7 +34,12 @@ export default function EnhancedMerchSearch({
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
   }, []);
 
   const fetchRecentSearches = async () => {
@@ -140,43 +144,48 @@ export default function EnhancedMerchSearch({
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onImageSearch) {
-      onImageSearch(file);
-    }
-  };
-
-  const startVoiceSearch = () => {
+  const toggleVoiceSearch = () => {
     if (!('webkitSpeechRecognition' in window)) {
       toast.error('Voice search is not supported in your browser');
       return;
     }
 
-    const recognition = new (window as any).webkitSpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setQuery(transcript);
-      onSearch(transcript);
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
+    if (isListening) {
+      // Stop listening
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
       setIsListening(false);
-    };
+    } else {
+      // Start listening
+      const recognition = new (window as any).webkitSpeechRecognition();
+      recognitionRef.current = recognition;
+      
+      recognition.continuous = false;
+      recognition.interimResults = false;
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
 
-    recognition.start();
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setQuery(transcript);
+        onSearch(transcript);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    }
   };
 
   const handleClearAll = () => {
@@ -232,24 +241,12 @@ export default function EnhancedMerchSearch({
           
           <button
             type="button"
-            onClick={startVoiceSearch}
+            onClick={toggleVoiceSearch}
             className={`p-2 rounded-full hover:bg-gray-100 transition-colors
               ${isListening ? 'text-red-500' : 'text-gray-400'}`}
           >
             <Mic className="w-5 h-5" />
           </button>
-
-          {onImageSearch && (
-            <label className="p-2 cursor-pointer hover:bg-gray-100 rounded-full transition-colors">
-              <Camera className="w-5 h-5 text-gray-400" />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-            </label>
-          )}
         </div>
 
         {/* Search Suggestions */}

@@ -6,6 +6,8 @@ import { CategorySection } from './browse/CategorySection';
 import { ResultsSummary } from './browse/ResultsSummary';
 import ItemCardSkeleton from './ItemCardSkeleton';
 import { Search } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import ItemCard from './ItemCard';
 
 interface ItemsGridProps {
   items: any[];
@@ -20,6 +22,7 @@ interface ItemsGridProps {
   onQuickView: (item: any) => void;
   onContact: (item: any) => void;
   onClearFilters: () => void;
+  onViewAllResults: () => void;
 }
 
 const container = {
@@ -49,8 +52,12 @@ export const ItemsGrid = ({
   lastItemRef,
   onQuickView,
   onContact,
-  onClearFilters
+  onClearFilters,
+  onViewAllResults
 }: ItemsGridProps) => {
+  const [searchParams] = useSearchParams();
+  const isViewAllMode = searchParams.get('viewAll') === 'true';
+
   if (fetchError) {
     return (
       <div className="text-center text-red-500 mt-8">
@@ -122,10 +129,12 @@ export const ItemsGrid = ({
     item.rating >= 4
   ).slice(0, 4) : [];
 
-  // Group items by category and subcategory
-  const groupedItems = items.reduce((acc: any, item) => {
-    if (!item.categories) return acc;
-    
+  // Separate categorized and uncategorized items
+  const categorizedItems = items.filter(item => item.categories);
+  const uncategorizedItems = items.filter(item => !item.categories);
+  
+  // Group categorized items by category and subcategory
+  const groupedItems = categorizedItems.reduce((acc: any, item) => {
     const categorySlug = item.categories.slug;
     const categoryName = item.categories.name;
     const subcategorySlug = item.subcategories?.slug || 'other';
@@ -149,19 +158,6 @@ export const ItemsGrid = ({
     return acc;
   }, {});
 
-  // If no categories are found, create an "Other" category
-  if (Object.keys(groupedItems).length === 0 && items.length > 0) {
-    groupedItems['other'] = {
-      name: 'Other',
-      subcategories: {
-        'uncategorized': {
-          name: 'Uncategorized',
-          items: items
-        }
-      }
-    };
-  }
-
   return (
     <div className="space-y-12">
       {/* Results Summary */}
@@ -173,7 +169,17 @@ export const ItemsGrid = ({
         hasExactMatches={hasExactMatches}
         isSearching={isSearching}
         searchQuery={filters.search}
+        totalCount={filters.totalCount}
       />
+      
+      {/* Debug info - only visible during development */}
+      {process.env.NODE_ENV === 'development' && filters.subcategories && filters.subcategories.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+          <p className="text-sm text-yellow-700">
+            <strong>Debug:</strong> Filtering by subcategories: {filters.subcategories.join(', ')}
+          </p>
+        </div>
+      )}
 
       {/* Featured Items - Only show when not searching */}
       {!filters.search && featuredItems.length > 0 && (
@@ -184,40 +190,101 @@ export const ItemsGrid = ({
         />
       )}
 
-      {/* Main Items Grid - Grouped by Category/Subcategory */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="space-y-12"
-      >
-        <AnimatePresence mode="wait">
-          {isSearching && page === 1 ? (
-            // Skeleton Loading State
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <motion.div key={i} variants={item}>
-                  <ItemCardSkeleton viewMode={viewMode} />
-                </motion.div>
-              ))}
-            </div>
-          ) : (
-            // Actual Items Grouped
-            Object.entries(groupedItems).map(([categorySlug, categoryData]: [string, any]) => (
-              <CategorySection
-                key={categorySlug}
-                categorySlug={categorySlug}
-                categoryName={categoryData.name}
-                subcategories={categoryData.subcategories}
-                viewMode={viewMode}
-                lastItemRef={lastItemRef}
-                onQuickView={onQuickView}
-                onContact={onContact}
-              />
-            ))
+      {/* Display items in a simple grid if searching or there are uncategorized items */}
+      {(filters.search || uncategorizedItems.length > 0) ? (
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="mt-8"
+        >
+          {filters.search && (
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">
+              {items.length} Results for "{filters.search}"
+            </h2>
           )}
-        </AnimatePresence>
-      </motion.div>
+          
+          <div className={
+            viewMode === 'grid'
+              ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6'
+              : 'space-y-4'
+          }>
+            {items.map((item: any, index: number) => (
+              <motion.div
+                key={item.id}
+                variants={item}
+                ref={index === items.length - 1 ? lastItemRef : null}
+                className={`group ${
+                  item.condition === 'New' 
+                    ? 'ring-1 ring-emerald-100' 
+                    : item.condition === 'Like New'
+                    ? 'ring-1 ring-blue-100'
+                    : ''
+                }`}
+              >
+                <ItemCard
+                  item={item}
+                  viewMode={viewMode}
+                  onQuickView={onQuickView}
+                  isWishlisted={false}
+                  onWishlistToggle={() => {}}
+                  onShare={() => {}}
+                  onContact={() => onContact(item)}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      ) : (
+        /* Main Items Grid - Grouped by Category/Subcategory when not searching */
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="space-y-12"
+        >
+          <AnimatePresence>
+            {isSearching && page === 1 ? (
+              // Skeleton Loading State
+              <motion.div 
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+              >
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <motion.div key={i} variants={item}>
+                    <ItemCardSkeleton viewMode={viewMode} />
+                  </motion.div>
+                ))}
+              </motion.div>
+            ) : (
+              // Actual Items Grouped
+              <motion.div 
+                key="items" 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-12"
+              >
+                {Object.entries(groupedItems).map(([categorySlug, categoryData]: [string, any]) => (
+                  <CategorySection
+                    key={categorySlug}
+                    categorySlug={categorySlug}
+                    categoryName={categoryData.name}
+                    subcategories={categoryData.subcategories}
+                    viewMode={viewMode}
+                    lastItemRef={lastItemRef}
+                    onQuickView={onQuickView}
+                    onContact={onContact}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
 
       {/* Loading More Indicator */}
       {isLoadingMore && (

@@ -1,6 +1,6 @@
 import React, { useRef, ChangeEvent, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Mic, Camera, Sparkles, Clock, TrendingUp, X, Trash2 } from 'lucide-react';
+import { Search, Mic, Sparkles, Clock, TrendingUp, X, Trash2 } from 'lucide-react';
 import { useSearch } from '../../hooks/useSearch';
 
 interface Props {
@@ -10,14 +10,12 @@ interface Props {
 }
 
 export default function EnhancedSearch({ onSearch, onImageSearch, showHistory = false }: Props) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const {
     query,
     setQuery,
     handleSearch,
     handleVoiceSearch,
-    handleImageUpload,
     showSuggestions,
     setShowSuggestions,
     recentSearches,
@@ -57,11 +55,6 @@ export default function EnhancedSearch({ onSearch, onImageSearch, showHistory = 
     } else if (event.key === 'Escape') {
       setShowSuggestions(false);
     }
-  };
-
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) handleImageUpload(file);
   };
 
   return (
@@ -104,15 +97,6 @@ export default function EnhancedSearch({ onSearch, onImageSearch, showHistory = 
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => fileInputRef.current?.click()}
-          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-        >
-          <Camera className="w-4 h-4" />
-        </motion.button>
-
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
           className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
         >
           <Sparkles className="w-4 h-4" />
@@ -131,15 +115,6 @@ export default function EnhancedSearch({ onSearch, onImageSearch, showHistory = 
           Search
         </motion.button>
       </div>
-
-      {/* Hidden File Input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
 
       {/* Search History Window */}
       {showHistory && (

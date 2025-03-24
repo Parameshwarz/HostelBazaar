@@ -247,11 +247,6 @@ export default function BrowseMerch() {
     setSearchParams(newSearchParams);
   };
 
-  const handleImageSearch = async (file: File) => {
-    console.log('BrowseMerch - Image search requested with file:', file);
-    toast.error('Image search coming soon!');
-  };
-
   const handleFilterChange = (filters: any) => {
     // Create new URLSearchParams (don't preserve old params)
     const newSearchParams = new URLSearchParams();
@@ -484,7 +479,6 @@ export default function BrowseMerch() {
             <h1 className="text-3xl font-bold text-white mb-6">Browse College Merch</h1>
             <EnhancedMerchSearch
               onSearch={handleSearch}
-              onImageSearch={handleImageSearch}
               initialQuery={initialQuery}
               onClearFilters={handleClearFilters}
             />

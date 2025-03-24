@@ -1,54 +1,83 @@
 import { Item } from '../types';
 
+/**
+ * Calculate similarity between a search term and item text
+ * Simplified implementation that provides better results
+ */
 export function calculateSimilarity(searchTerm: string, itemText: string): number {
-  const normalizedSearch = searchTerm.toLowerCase();
-  const normalizedItem = itemText.toLowerCase();
-
-  // Direct match check
-  if (normalizedItem.includes(normalizedSearch)) {
+  // Handle empty inputs
+  if (!searchTerm || !itemText) return 0;
+  
+  const normalizedSearch = searchTerm.toLowerCase().trim();
+  const normalizedItem = itemText.toLowerCase().trim();
+  
+  // Return 1 for direct matches
+  if (normalizedItem === normalizedSearch) {
     return 1;
   }
-
-  // Split search term into words for partial matching
-  const searchWords = normalizedSearch.split(/\s+/);
-  const itemWords = normalizedItem.split(/\s+/);
-
-  // Calculate word-level matches
-  const wordMatches = searchWords.map(searchWord => {
+  
+  // High score for contained matches
+  if (normalizedItem.includes(normalizedSearch)) {
+    return 0.9;
+  }
+  
+  // High score for when search term contains the item text
+  if (normalizedSearch.includes(normalizedItem) && normalizedItem.length > 3) {
+    return 0.8;
+  }
+  
+  // Split terms into words
+  const searchWords = normalizedSearch.split(/\s+/).filter(w => w.length > 1);
+  const itemWords = normalizedItem.split(/\s+/).filter(w => w.length > 1);
+  
+  if (searchWords.length === 0 || itemWords.length === 0) return 0;
+  
+  // Count matching words
+  let matchedWords = 0;
+  let partialMatches = 0;
+  
+  for (const searchWord of searchWords) {
+    // Skip very short words
+    if (searchWord.length < 2) continue;
+    
     // Check for exact word matches
-    if (itemWords.includes(searchWord)) {
-      return 1;
+    if (itemWords.some(w => w === searchWord)) {
+      matchedWords++;
+      continue;
     }
-
+    
+    // Check for word starts with
+    if (itemWords.some(w => w.startsWith(searchWord) || searchWord.startsWith(w))) {
+      matchedWords += 0.7;
+      partialMatches++;
+      continue;
+    }
+    
     // Check for partial word matches
-    const partialMatches = itemWords.map(itemWord => {
-      // Start of word match gets higher score
-      if (itemWord.startsWith(searchWord)) {
-        return 0.9;
-      }
-
-      // Contains match gets medium score
-      if (itemWord.includes(searchWord)) {
-        return 0.7;
-      }
-
-      // Levenshtein distance for typo tolerance
-      const distance = levenshteinDistance(searchWord, itemWord);
-      const maxLength = Math.max(searchWord.length, itemWord.length);
-      const similarity = (maxLength - distance) / maxLength;
-
-      return similarity;
-    });
-
-    return Math.max(...partialMatches);
-  });
-
-  // Calculate final score
-  const avgScore = wordMatches.reduce((sum, score) => sum + score, 0) / wordMatches.length;
-  return avgScore;
+    if (itemWords.some(w => w.includes(searchWord) || searchWord.includes(w))) {
+      matchedWords += 0.5;
+      partialMatches++;
+      continue;
+    }
+  }
+  
+  // No matches found
+  if (matchedWords === 0 && partialMatches === 0) return 0;
+  
+  // Calculate score based on matching words
+  const baseScore = matchedWords / Math.max(searchWords.length, itemWords.length);
+  
+  // Add a boost for partial matches
+  const partialBoost = partialMatches * 0.1;
+  
+  return Math.min(1, baseScore + partialBoost);
 }
 
-function levenshteinDistance(str1: string, str2: string): number {
+/**
+ * Simplified Levenshtein distance function for fuzzy matching
+ * Used only as a fallback for more complex matches
+ */
+export function levenshteinDistance(str1: string, str2: string): number {
   const track = Array(str2.length + 1).fill(null).map(() =>
     Array(str1.length + 1).fill(null));
 

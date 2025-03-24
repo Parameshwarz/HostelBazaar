@@ -8,6 +8,7 @@ interface ResultsSummaryProps {
   hasExactMatches: boolean;
   isSearching: boolean;
   searchQuery?: string;
+  totalCount?: number;
 }
 
 export const ResultsSummary: React.FC<ResultsSummaryProps> = ({
@@ -17,9 +18,12 @@ export const ResultsSummary: React.FC<ResultsSummaryProps> = ({
   usedItemsCount,
   hasExactMatches,
   isSearching,
-  searchQuery
+  searchQuery,
+  totalCount
 }) => {
-  if (totalItems === 0 || isSearching) return null;
+  if ((totalItems === 0 && !totalCount) || isSearching) return null;
+
+  const displayCount = totalCount || totalItems;
 
   return (
     <div className="flex items-center justify-between bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -33,11 +37,16 @@ export const ResultsSummary: React.FC<ResultsSummaryProps> = ({
             <span className="font-medium text-gray-900">
               {searchQuery ? (
                 <>
-                  {totalItems} {totalItems === 1 ? 'result' : 'results'} for "{searchQuery}"
+                  {displayCount} {displayCount === 1 ? 'result' : 'results'} for "{searchQuery}"
+                  {totalCount && totalCount > totalItems && (
+                    <span className="text-sm text-gray-500 ml-1">
+                      (showing {totalItems})
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
-                  {totalItems} {totalItems === 1 ? 'item' : 'items'} available
+                  {displayCount} {displayCount === 1 ? 'item' : 'items'} available
                 </>
               )}
             </span>
