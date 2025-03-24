@@ -53,12 +53,21 @@ export const useAuthStore = create<AuthState>()(
       },
       signOut: async () => {
         try {
-          await supabase.auth.signOut();
+          const { error } = await supabase.auth.signOut();
+          if (error) {
+            console.error('Error signing out from Supabase:', error);
+          }
         } catch (err) {
           console.error('Error signing out:', err);
+        } finally {
+          // Always clear local storage and state, even if Supabase signOut fails
+          localStorage.removeItem('hostelbazaar_auth');
+          sessionStorage.removeItem('hostelbazaar-auth');
+          set({ user: null });
+          
+          // Force page reload to ensure all state is cleared
+          window.location.href = '/';
         }
-        localStorage.removeItem('hostelbazaar_auth');
-        set({ user: null });
       },
     }),
     {

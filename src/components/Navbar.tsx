@@ -19,6 +19,9 @@ import DarkModeToggle from './DarkModeToggle';
 import useSound from 'use-sound';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { supabase } from '../lib/supabase';
+import { useNotifications } from '../hooks/useNotifications';
+import { createSampleNotification } from '../services/notificationService';
+import { signOutCompletely } from '../utils/auth';
 
 interface NavLink {
   name: string;
@@ -76,40 +79,12 @@ export default function Navbar() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showResults, setShowResults] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: 1,
-      title: 'New trade offer',
-      message: 'John wants to buy your laptop',
-      category: 'trade',
-      timestamp: '2 minutes ago',
-      read: false,
-      actions: {
-        accept: () => handleNotificationAction('accept', 1),
-        decline: () => handleNotificationAction('decline', 1)
-      }
-    },
-    {
-      id: 2,
-      title: 'New message',
-      message: 'Sarah sent you a message about the book',
-      category: 'message',
-      timestamp: '5 minutes ago',
-      read: false,
-      actions: {
-        reply: () => handleNotificationAction('reply', 2)
-      }
-    },
-    {
-      id: 3,
-      title: 'Price alert',
-      message: 'A similar item is now available at a lower price',
-      category: 'alert',
-      timestamp: '10 minutes ago',
-      read: true
-    }
-  ]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const { 
+    notifications, 
+    unreadCount: unreadNotifications, 
+    markAsRead, 
+    markAllAsRead 
+  } = useNotifications();
   const { items: searchResults, loading: searchLoading } = useFuzzySearch(searchTerm);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
@@ -142,7 +117,7 @@ export default function Navbar() {
   ];
 
   // Handle notification action
-  const handleNotificationAction = (action: string, notificationId: number) => {
+  const handleNotificationAction = (action: string, notificationId: string) => {
     switch (action) {
       case 'accept':
         // Handle accept
@@ -156,9 +131,18 @@ export default function Navbar() {
         // Handle reply
         navigate('/messages');
         break;
+      case 'view':
+        // Handle view - navigate to the notification's action_url if available
+        const notification = notifications.find(n => n.id === notificationId);
+        if (notification?.action_url) {
+          navigate(notification.action_url);
+        }
+        break;
     }
-    // Remove notification
-    setNotifications(prev => prev.filter(n => n.id !== notificationId));
+    
+    // Mark notification as read
+    markAsRead(notificationId);
+    
     // Play sound if enabled
     if (soundEnabled) playNotificationSound();
   };
@@ -351,44 +335,6 @@ export default function Navbar() {
     }
   };
 
-  // Simulate notifications (replace with real data)
-  useEffect(() => {
-    setNotifications([
-      {
-        id: 1,
-        title: 'New trade offer',
-        message: 'John wants to buy your laptop',
-        category: 'trade',
-        timestamp: '2 minutes ago',
-        read: false,
-        actions: {
-          accept: () => handleNotificationAction('accept', 1),
-          decline: () => handleNotificationAction('decline', 1)
-        }
-      },
-      {
-        id: 2,
-        title: 'New message',
-        message: 'Sarah sent you a message about the book',
-        category: 'message',
-        timestamp: '5 minutes ago',
-        read: false,
-        actions: {
-          reply: () => handleNotificationAction('reply', 2)
-        }
-      },
-      {
-        id: 3,
-        title: 'Price alert',
-        message: 'A similar item is now available at a lower price',
-        category: 'alert',
-        timestamp: '10 minutes ago',
-        read: true
-      }
-    ]);
-    setUnreadNotifications(2);
-  }, []);
-
   // Add scroll progress tracking
   const { scrollYProgress } = useScroll();
 
@@ -425,6 +371,77 @@ export default function Navbar() {
       }
     }
   }, [user, setUser]);
+
+  const quickActionsPopover = (
+    <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-lg overflow-hidden w-96 border dark:border-dark-border">
+      <div className="border-b dark:border-dark-border">
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Quick Actions</h3>
+            <button 
+              onClick={() => setShowQuickActions(false)}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="p-4 max-h-96 overflow-y-auto">
+        <div className="space-y-6">
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Primary Actions</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {quickActions.map((action) => (
+                <button
+                  key={action.name}
+                  className="flex flex-col items-center justify-center bg-gray-50 dark:bg-dark-bg-tertiary 
+                    hover:bg-gray-100 dark:hover:bg-dark-bg-quaternary rounded-lg p-4 transition-colors"
+                  onClick={() => {
+                    navigate(action.href);
+                    setShowQuickActions(false);
+                  }}
+                >
+                  <div className={`p-3 rounded-full ${action.color} mb-2`}>
+                    <action.icon className={`h-5 w-5 ${action.color}`} />
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{action.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recent Activity</h4>
+            <div className="space-y-2">
+              <div 
+                className="flex items-center p-3 bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg 
+                hover:bg-gray-100 dark:hover:bg-dark-bg-quaternary transition-colors cursor-pointer"
+                onClick={() => {
+                  if (user) {
+                    // Create a sample notification
+                    createSampleNotification(user.id);
+                  } else {
+                    toast.error('You must be logged in to create notifications');
+                  }
+                  setShowQuickActions(false);
+                }}
+              >
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg mr-3">
+                  <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Recent Activity Sample</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Tap to create a sample notification</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -632,8 +649,7 @@ export default function Navbar() {
                                 className="text-sm text-primary-600 dark:text-primary-400 
                                 hover:text-primary-700 dark:hover:text-primary-300"
                                 onClick={() => {
-                                  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-                                  setUnreadNotifications(0);
+                                  markAllAsRead();
                                 }}
                               >
                                 Mark all as read
@@ -658,90 +674,88 @@ export default function Navbar() {
 
                           {/* Notifications List */}
                           <div className="space-y-3">
-                            {notifications.map((notification) => {
-                              const category = notificationCategories.find(c => c.id === notification.category);
-                              return (
-                                <Menu.Item key={notification.id}>
-                                  {({ active }) => (
-                                    <div
-                                      className={`w-full rounded-lg ${
-                                        active ? 'bg-gray-50 dark:bg-dark-bg-tertiary' : ''
-                                      } ${!notification.read ? 'bg-primary-50 dark:bg-primary-900/10' : ''}`}
-                                    >
-                                      <div className="p-3">
-                                        <div className="flex items-start gap-3">
-                                          <div className={`p-2 rounded-lg ${
-                                            !notification.read ? 'bg-white dark:bg-dark-bg-secondary' : 
-                                            'bg-gray-100 dark:bg-dark-bg-tertiary'
-                                          }`}>
-                                            {category && (
-                                              <category.icon className={`h-5 w-5 ${category.color}`} />
-                                            )}
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                            <p className={`text-sm ${
-                                              !notification.read 
-                                                ? 'font-medium text-gray-900 dark:text-white' 
-                                                : 'text-gray-600 dark:text-gray-300'
-                                            }`}>
-                                              {notification.title}
-                                            </p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                              {notification.message}
-                                            </p>
-                                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                              {notification.timestamp}
-                                            </p>
+                            {notifications.length > 0 ? (
+                              <>
+                                <div className="flex justify-between items-center px-3 py-2">
+                                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Notifications</h3>
+                                  <button
+                                    onClick={() => markAllAsRead()}
+                                    className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 
+                                    dark:hover:text-primary-300 transition-colors"
+                                  >
+                                    Mark all as read
+                                  </button>
+                                </div>
+                                {notifications.map((notification) => {
+                                  const category = notificationCategories.find(c => c.id === notification.category);
+                                  return (
+                                    <Menu.Item key={notification.id}>
+                                      {({ active }) => (
+                                        <div
+                                          className={`w-full rounded-lg ${
+                                            active ? 'bg-gray-50 dark:bg-dark-bg-tertiary' : ''
+                                          } ${!notification.is_read ? 'bg-primary-50 dark:bg-primary-900/10' : ''}`}
+                                        >
+                                          <div className="p-3">
+                                            <div className="flex items-start gap-3">
+                                              <div className={`p-2 rounded-lg ${
+                                                !notification.is_read ? 'bg-white dark:bg-dark-bg-secondary' : 
+                                                'bg-gray-100 dark:bg-dark-bg-tertiary'
+                                              }`}>
+                                                {category && (
+                                                  <category.icon className={`h-5 w-5 ${category.color}`} />
+                                                )}
+                                              </div>
+                                              <div 
+                                                className="flex-1 min-w-0 cursor-pointer"
+                                                onClick={() => handleNotificationAction('view', notification.id)}
+                                              >
+                                                <p className={`text-sm ${
+                                                  !notification.is_read 
+                                                    ? 'font-medium text-gray-900 dark:text-white' 
+                                                    : 'text-gray-600 dark:text-gray-300'
+                                                }`}>
+                                                  {notification.title}
+                                                </p>
+                                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                                                  {notification.message}
+                                                </p>
+                                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                                  {new Date(notification.created_at).toLocaleString()}
+                                                </p>
+                                              </div>
+                                              {!notification.is_read && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    markAsRead(notification.id);
+                                                  }}
+                                                  className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 
+                                                  dark:hover:text-gray-300"
+                                                >
+                                                  <Check className="h-4 w-4" />
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
-
-                                        {/* Quick Actions */}
-                                        {notification.actions && (
-                                          <div className="flex gap-2 mt-3 pl-12">
-                                            {notification.actions.accept && (
-                                              <button
-                                                onClick={notification.actions.accept}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium 
-                                                text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/10 
-                                                rounded-full hover:bg-green-100 dark:hover:bg-green-900/20 
-                                                transition-colors"
-                                              >
-                                                <Check className="h-3.5 w-3.5" />
-                                                Accept
-                                              </button>
-                                            )}
-                                            {notification.actions.decline && (
-                                              <button
-                                                onClick={notification.actions.decline}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium 
-                                                text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/10 
-                                                rounded-full hover:bg-red-100 dark:hover:bg-red-900/20 
-                                                transition-colors"
-                                              >
-                                                <XMark className="h-3.5 w-3.5" />
-                                                Decline
-                                              </button>
-                                            )}
-                                            {notification.actions.reply && (
-                                              <button
-                                                onClick={notification.actions.reply}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium 
-                                                text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/10 
-                                                rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/20 
-                                                transition-colors"
-                                              >
-                                                <MessageSquare className="h-3.5 w-3.5" />
-                                                Reply
-                                              </button>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </Menu.Item>
-                              );
-                            })}
+                                      )}
+                                    </Menu.Item>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <div className="px-4 py-6 text-center">
+                                <div className="w-16 h-16 mx-auto bg-gray-100 dark:bg-dark-bg-tertiary rounded-full 
+                                flex items-center justify-center mb-3">
+                                  <Bell className="h-8 w-8 text-gray-400 dark:text-gray-500" />
+                                </div>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">No notifications yet</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  We'll notify you when something happens
+                                </p>
+                              </div>
+                            )}
                           </div>
                           <Link
                             to="/notifications"
@@ -855,7 +869,16 @@ export default function Navbar() {
                           <Menu.Item>
                             {({ active }) => (
                               <button
-                                onClick={() => signOut()}
+                                onClick={async () => {
+                                  try {
+                                    // Use the centralized sign out function
+                                    await signOutCompletely();
+                                  } catch (error) {
+                                    console.error('Error during sign out:', error);
+                                    // Force redirect even if there's an error
+                                    window.location.href = '/';
+                                  }
+                                }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${
                                   active 
                                     ? 'bg-gray-50 dark:bg-dark-bg-tertiary text-red-600 dark:text-red-400' 

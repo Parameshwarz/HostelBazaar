@@ -3,6 +3,7 @@ import { ShoppingBag, Search, User, LogOut, MessageCircle, Package } from 'lucid
 import { useState, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { signOutCompletely } from '../utils/auth';
 
 export default function Navigation() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,7 +89,14 @@ export default function Navigation() {
                   <User className="h-6 w-6" />
                 </Link>
                 <button
-                  onClick={() => signOut()}
+                  onClick={async () => {
+                    try {
+                      await signOutCompletely();
+                    } catch (error) {
+                      console.error('Error during sign out:', error);
+                      window.location.href = '/';
+                    }
+                  }}
                   className="text-gray-600 hover:text-gray-900"
                 >
                   <LogOut className="h-6 w-6" />
