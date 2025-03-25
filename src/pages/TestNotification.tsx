@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 
 /**
- * Simple test page to directly create notifications via SQL
+ * Simple test page to directly test request notifications
  */
 const TestNotificationPage: React.FC = () => {
   const { user } = useAuthStore();
@@ -16,7 +16,7 @@ const TestNotificationPage: React.FC = () => {
     
     try {
       const { data, error } = await supabase
-        .from('notifications')
+        .from('request_notifications')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -44,7 +44,7 @@ const TestNotificationPage: React.FC = () => {
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'notifications',
+        table: 'request_notifications',
         filter: `user_id=eq.${user.id}`,
       }, (payload) => {
         console.log('New notification received!', payload);
@@ -60,7 +60,7 @@ const TestNotificationPage: React.FC = () => {
     };
   }, [user]);
 
-  const createNotification = async () => {
+  const createTestNotification = async () => {
     if (!user) {
       toast.error("You must be logged in");
       return;
@@ -69,14 +69,12 @@ const TestNotificationPage: React.FC = () => {
     setLoading(true);
     try {
       const { error } = await supabase
-        .from('notifications')
+        .from('request_notifications')
         .insert([
           {
             user_id: user.id,
-            title: 'Test Notification',
-            message: 'This is a test notification created at ' + new Date().toLocaleTimeString(),
-            category: 'system',
-            action_url: '/settings'
+            type: 'system',
+            is_read: false
           }
         ]);
 
@@ -99,9 +97,9 @@ const TestNotificationPage: React.FC = () => {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white shadow-sm rounded-lg overflow-hidden">
           <div className="p-6 border-b">
-            <h2 className="text-xl font-semibold text-gray-900">Notification System Test</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Request Notification System Test</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Test the notification system directly
+              Test the request notification system directly
             </p>
           </div>
           
@@ -112,16 +110,16 @@ const TestNotificationPage: React.FC = () => {
               </p>
 
               <button
-                onClick={createNotification}
+                onClick={createTestNotification}
                 disabled={loading || !user}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400"
               >
-                {loading ? 'Creating...' : 'Create Test Notification'}
+                {loading ? 'Creating...' : 'Create Test Request Notification'}
               </button>
             </div>
             
             <div className="mt-8">
-              <h3 className="font-medium text-gray-900 mb-4">Your Notifications:</h3>
+              <h3 className="font-medium text-gray-900 mb-4">Your Request Notifications:</h3>
               {userNotifications.length > 0 ? (
                 <div className="space-y-3">
                   {userNotifications.map((notification) => (
@@ -129,8 +127,10 @@ const TestNotificationPage: React.FC = () => {
                       key={notification.id} 
                       className={`p-4 border rounded-lg ${notification.is_read ? 'bg-white' : 'bg-blue-50'}`}
                     >
-                      <p className="font-medium">{notification.title}</p>
-                      <p className="text-gray-600">{notification.message}</p>
+                      <p className="font-medium">Type: {notification.type}</p>
+                      {notification.match_id && (
+                        <p className="text-gray-600">Match ID: {notification.match_id}</p>
+                      )}
                       <p className="text-xs text-gray-500 mt-1">
                         {new Date(notification.created_at).toLocaleString()}
                       </p>

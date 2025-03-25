@@ -6,14 +6,10 @@ import { toast } from 'react-hot-toast';
 export interface Notification {
   id: string;
   user_id: string;
-  title: string;
-  message: string;
-  category: 'trade' | 'message' | 'alert' | 'system';
-  created_at: string;
+  match_id?: string;
+  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system';
   is_read: boolean;
-  action_url?: string;
-  related_id?: string;
-  related_type?: string;
+  created_at: string;
 }
 
 export const useNotifications = () => {
@@ -36,9 +32,9 @@ export const useNotifications = () => {
 
     try {
       console.log("Fetching notifications for user:", user.id);
-      // Fetch notifications from Supabase
+      // Fetch notifications from the existing request_notifications table
       const { data, error: fetchError } = await supabase
-        .from('notifications')
+        .from('request_notifications')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -62,7 +58,7 @@ export const useNotifications = () => {
   const markAsRead = async (notificationId: string) => {
     try {
       const { error: updateError } = await supabase
-        .from('notifications')
+        .from('request_notifications')
         .update({ is_read: true })
         .eq('id', notificationId);
 
@@ -88,7 +84,7 @@ export const useNotifications = () => {
 
     try {
       const { error: updateError } = await supabase
-        .from('notifications')
+        .from('request_notifications')
         .update({ is_read: true })
         .eq('user_id', user.id)
         .eq('is_read', false);
@@ -114,14 +110,14 @@ export const useNotifications = () => {
     console.log("Setting up notifications for user:", user.id);
     fetchNotifications();
 
-    // Set up real-time subscription
+    // Set up real-time subscription to request_notifications
     const channel = supabase
-      .channel('db_notifications')
+      .channel('request_notifications_changes')
       .on('postgres_changes', 
         {
           event: '*', // Listen for all events (INSERT, UPDATE, DELETE)
           schema: 'public',
-          table: 'notifications',
+          table: 'request_notifications',
           filter: `user_id=eq.${user.id}`,
         }, 
         (payload) => {
@@ -132,7 +128,15 @@ export const useNotifications = () => {
             const newNotification = payload.new as Notification;
             setNotifications(prev => [newNotification, ...prev]);
             setUnreadCount(prev => prev + 1);
-            toast.success(`New notification: ${newNotification.title}`);
+            
+            // Generate appropriate notification message based on type
+            let message = 'You have a new notification';
+            if (newNotification.type === 'new_match') message = 'You have a new match request';
+            if (newNotification.type === 'match_accepted') message = 'Your match request was accepted';
+            if (newNotification.type === 'match_rejected') message = 'Your match request was rejected';
+            if (newNotification.type === 'match_completed') message = 'A match was completed';
+            
+            toast.success(message);
           } 
           else if (payload.eventType === 'UPDATE') {
             // Update the notification in the list

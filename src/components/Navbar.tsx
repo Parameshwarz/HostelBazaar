@@ -58,17 +58,12 @@ interface NotificationCategory {
 }
 
 interface Notification {
-  id: number;
-  title: string;
-  message: string;
-  category: string;
-  timestamp: string;
-  read: boolean;
-  actions?: {
-    accept?: () => void;
-    decline?: () => void;
-    reply?: () => void;
-  };
+  id: string;
+  user_id: string;
+  match_id?: string;
+  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system';
+  is_read: boolean;
+  created_at: string;
 }
 
 export default function Navbar() {
@@ -121,21 +116,17 @@ export default function Navbar() {
     switch (action) {
       case 'accept':
         // Handle accept
-        toast.success('Trade offer accepted');
+        toast.success('Match request accepted');
         break;
       case 'decline':
         // Handle decline
-        toast.error('Trade offer declined');
-        break;
-      case 'reply':
-        // Handle reply
-        navigate('/messages');
+        toast.error('Match request declined');
         break;
       case 'view':
-        // Handle view - navigate to the notification's action_url if available
+        // Handle view - navigate to matches page for match notifications
         const notification = notifications.find(n => n.id === notificationId);
-        if (notification?.action_url) {
-          navigate(notification.action_url);
+        if (notification?.match_id) {
+          navigate('/matches');
         }
         break;
     }
@@ -443,6 +434,106 @@ export default function Navbar() {
     </div>
   );
 
+  const renderNotifications = () => {
+    return (
+      <div className="max-h-96 overflow-y-auto">
+        {notifications.length > 0 ? (
+          <div className="divide-y divide-gray-200 dark:divide-dark-border">
+            {notifications.map((notification) => {
+              // Determine title and message based on notification type
+              let title = 'Notification';
+              let message = '';
+              let icon = notificationCategories.find(c => c.id === 'system')?.icon;
+              
+              switch (notification.type) {
+                case 'new_match':
+                  title = 'New Match Request';
+                  message = 'Someone wants to match with you!';
+                  icon = notificationCategories.find(c => c.id === 'trade')?.icon;
+                  break;
+                case 'match_accepted':
+                  title = 'Match Accepted';
+                  message = 'Your match request was accepted!';
+                  icon = notificationCategories.find(c => c.id === 'trade')?.icon;
+                  break;
+                case 'match_rejected':
+                  title = 'Match Rejected';
+                  message = 'Your match request was declined.';
+                  icon = notificationCategories.find(c => c.id === 'alert')?.icon;
+                  break;
+                case 'match_completed':
+                  title = 'Match Completed';
+                  message = 'A match was successfully completed.';
+                  icon = notificationCategories.find(c => c.id === 'trade')?.icon;
+                  break;
+                case 'system':
+                  title = 'System Notification';
+                  message = 'You have a new system notification.';
+                  icon = notificationCategories.find(c => c.id === 'system')?.icon;
+                  break;
+              }
+              
+              const IconComponent = icon || Bell;
+              
+              return (
+                <div 
+                  key={notification.id}
+                  className={`p-4 ${!notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0 pt-0.5">
+                      <IconComponent className="h-5 w-5 text-gray-500 dark:text-dark-text-secondary" />
+                    </div>
+                    <div className="ml-3 w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
+                        {title}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+                        {message}
+                      </p>
+                      <div className="mt-2 flex space-x-2">
+                        {notification.type === 'new_match' && (
+                          <>
+                            <button
+                              onClick={() => handleNotificationAction('accept', notification.id)}
+                              className="text-sm font-medium text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleNotificationAction('decline', notification.id)}
+                              className="text-sm font-medium text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              Decline
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleNotificationAction('view', notification.id)}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          View
+                        </button>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-400 dark:text-dark-text-tertiary">
+                        {new Date(notification.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-4 text-center text-gray-500 dark:text-dark-text-secondary">
+            <Bell className="h-6 w-6 mx-auto mb-2 text-gray-400 dark:text-dark-text-tertiary" />
+            <p className="text-sm">No notifications yet</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Main Navbar */}
@@ -606,165 +697,51 @@ export default function Navbar() {
               {user ? (
                 <>
                   {/* Notifications Dropdown */}
-                  <Menu as="div" className="relative">
-                    <Menu.Button className="relative p-2 text-gray-600 dark:text-gray-300 
-                    hover:text-primary-600 dark:hover:text-primary-400 transition-colors rounded-full 
-                    hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary">
+                  <Menu as="div" className="relative ml-2">
+                    <Menu.Button className="relative p-1.5 text-gray-500 dark:text-dark-text-secondary rounded-full
+                      hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary focus:outline-none focus:ring-2 focus:ring-primary-600">
+                      <span className="absolute -inset-1.5" />
                       <Bell className="h-6 w-6" />
                       {unreadNotifications > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full 
-                        text-[10px] text-white flex items-center justify-center">
-                          {unreadNotifications}
+                        <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                          {unreadNotifications > 9 ? '9+' : unreadNotifications}
                         </span>
                       )}
                     </Menu.Button>
                     <Transition
-                      enter="transition duration-200 ease-out"
-                      enterFrom="transform scale-95 opacity-0"
-                      enterTo="transform scale-100 opacity-100"
-                      leave="transition duration-75 ease-in"
-                      leaveFrom="transform scale-100 opacity-100"
-                      leaveTo="transform scale-95 opacity-0"
+                      as={React.Fragment}
+                      enter="transition ease-out duration-100"
+                      enterFrom="transform opacity-0 scale-95"
+                      enterTo="transform opacity-100 scale-100"
+                      leave="transition ease-in duration-75"
+                      leaveFrom="transform opacity-100 scale-100"
+                      leaveTo="transform opacity-0 scale-95"
                     >
-                      <Menu.Items className="absolute right-0 w-96 mt-2 bg-white dark:bg-dark-bg-secondary 
-                      rounded-xl shadow-lg border border-gray-100 dark:border-dark-bg-tertiary 
-                      focus:outline-none">
-                        <div className="p-4">
-                          <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                              Notifications
-                            </h3>
-                            <div className="flex items-center gap-2">
-                              <button 
-                                onClick={() => setSoundEnabled(!soundEnabled)}
-                                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary"
-                              >
-                                {soundEnabled ? (
-                                  <Volume2 className="h-4 w-4 text-gray-500" />
-                                ) : (
-                                  <VolumeX className="h-4 w-4 text-gray-500" />
-                                )}
-                              </button>
-                              <button 
-                                className="text-sm text-primary-600 dark:text-primary-400 
-                                hover:text-primary-700 dark:hover:text-primary-300"
-                                onClick={() => {
-                                  markAllAsRead();
-                                }}
+                      <Menu.Items className="absolute right-0 z-30 mt-2 w-96 max-w-[90vw] origin-top-right rounded-lg bg-white 
+                        dark:bg-dark-bg-secondary shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none py-2">
+                        <div className="px-3 py-2 border-b border-gray-100 dark:border-dark-border">
+                          <div className="flex justify-between items-center">
+                            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Notifications</h3>
+                            {notifications.length > 0 && (
+                              <button
+                                onClick={() => markAllAsRead()}
+                                className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 
+                                dark:hover:text-primary-300 transition-colors"
                               >
                                 Mark all as read
                               </button>
-                            </div>
-                          </div>
-
-                          {/* Category Filters */}
-                          <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                            {notificationCategories.map((category) => (
-                              <button
-                                key={category.id}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-                                ${category.color} bg-gray-50 dark:bg-dark-bg-tertiary hover:bg-gray-100 
-                                dark:hover:bg-dark-bg-quaternary transition-colors`}
-                              >
-                                <category.icon className="h-3.5 w-3.5" />
-                                {category.name}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Notifications List */}
-                          <div className="space-y-3">
-                            {notifications.length > 0 ? (
-                              <>
-                                <div className="flex justify-between items-center px-3 py-2">
-                                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Notifications</h3>
-                                  <button
-                                    onClick={() => markAllAsRead()}
-                                    className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 
-                                    dark:hover:text-primary-300 transition-colors"
-                                  >
-                                    Mark all as read
-                                  </button>
-                                </div>
-                                {notifications.map((notification) => {
-                                  const category = notificationCategories.find(c => c.id === notification.category);
-                                  return (
-                                    <Menu.Item key={notification.id}>
-                                      {({ active }) => (
-                                        <div
-                                          className={`w-full rounded-lg ${
-                                            active ? 'bg-gray-50 dark:bg-dark-bg-tertiary' : ''
-                                          } ${!notification.is_read ? 'bg-primary-50 dark:bg-primary-900/10' : ''}`}
-                                        >
-                                          <div className="p-3">
-                                            <div className="flex items-start gap-3">
-                                              <div className={`p-2 rounded-lg ${
-                                                !notification.is_read ? 'bg-white dark:bg-dark-bg-secondary' : 
-                                                'bg-gray-100 dark:bg-dark-bg-tertiary'
-                                              }`}>
-                                                {category && (
-                                                  <category.icon className={`h-5 w-5 ${category.color}`} />
-                                                )}
-                                              </div>
-                                              <div 
-                                                className="flex-1 min-w-0 cursor-pointer"
-                                                onClick={() => handleNotificationAction('view', notification.id)}
-                                              >
-                                                <p className={`text-sm ${
-                                                  !notification.is_read 
-                                                    ? 'font-medium text-gray-900 dark:text-white' 
-                                                    : 'text-gray-600 dark:text-gray-300'
-                                                }`}>
-                                                  {notification.title}
-                                                </p>
-                                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                                  {notification.message}
-                                                </p>
-                                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                                  {new Date(notification.created_at).toLocaleString()}
-                                                </p>
-                                              </div>
-                                              {!notification.is_read && (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    markAsRead(notification.id);
-                                                  }}
-                                                  className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 
-                                                  dark:hover:text-gray-300"
-                                                >
-                                                  <Check className="h-4 w-4" />
-                                                </button>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </Menu.Item>
-                                  );
-                                })}
-                              </>
-                            ) : (
-                              <div className="px-4 py-6 text-center">
-                                <div className="w-16 h-16 mx-auto bg-gray-100 dark:bg-dark-bg-tertiary rounded-full 
-                                flex items-center justify-center mb-3">
-                                  <Bell className="h-8 w-8 text-gray-400 dark:text-gray-500" />
-                                </div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">No notifications yet</p>
-                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                  We'll notify you when something happens
-                                </p>
-                              </div>
                             )}
                           </div>
-                          <Link
-                            to="/notifications"
-                            className="block mt-4 text-sm text-center text-primary-600 
-                            dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
-                          >
-                            View all notifications
-                          </Link>
                         </div>
+                        {renderNotifications()}
+                        <Link
+                          to="/test-notifications"
+                          className="block mt-2 px-3 py-2 text-sm text-center text-primary-600 
+                          hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                        >
+                          View all notifications
+                          <ChevronRight className="ml-1 inline-block h-4 w-4" />
+                        </Link>
                       </Menu.Items>
                     </Transition>
                   </Menu>
