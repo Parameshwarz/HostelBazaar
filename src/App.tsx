@@ -37,6 +37,7 @@ import StyleFeedPage from './pages/StyleFeed';
 import Matches from './pages/Matches';
 import { initAuth } from './store/initAuth';
 import TestNotificationPage from './pages/TestNotification';
+import NotificationsPage from './pages/Notifications';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -124,6 +125,7 @@ function AppContent() {
               <Route path="/requests" element={<Requests />} />
               <Route path="/style-feed" element={<StyleFeedPage />} />
               <Route path="/test-notifications" element={<TestNotificationPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

@@ -763,7 +763,7 @@ export default function Navbar() {
                         </div>
                         {renderNotifications()}
                         <Link
-                          to="/test-notifications"
+                          to="/notifications"
                           className="block mt-2 px-3 py-2 text-sm text-center text-primary-600 
                           hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
                         >
