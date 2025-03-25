@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
-import { getOrCreateChannel } from '../lib/supabase'; // Import the channel helper
 
 export interface Notification {
   id: string;
@@ -13,37 +12,6 @@ export interface Notification {
   created_at: string;
 }
 
-// Add notification cache with sessionStorage to prevent multiple fetches
-const getFromCache = (userId: string) => {
-  const cached = sessionStorage.getItem(`notifications_${userId}`);
-  if (cached) {
-    try {
-      const { data, timestamp } = JSON.parse(cached);
-      // Cache is valid for 1 minute
-      if (Date.now() - timestamp < 60000) {
-        return data;
-      }
-    } catch (e) {
-      console.error('Error parsing notification cache:', e);
-    }
-  }
-  return null;
-};
-
-const saveToCache = (userId: string, data: Notification[]) => {
-  try {
-    sessionStorage.setItem(
-      `notifications_${userId}`,
-      JSON.stringify({
-        data,
-        timestamp: Date.now()
-      })
-    );
-  } catch (e) {
-    console.error('Error saving notification cache:', e);
-  }
-};
-
 export const useNotifications = () => {
   const { user } = useAuthStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -51,9 +19,6 @@ export const useNotifications = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<any>(null);
-  
-  // Track if we've already fetched notifications
-  const initialFetchDoneRef = useRef(false);
 
   // Function to get message sender info and enhance the toast notification
   const getSenderInfoForMessageNotification = async (notificationId: string) => {
@@ -92,8 +57,7 @@ export const useNotifications = () => {
     }
   };
 
-  // Memoize fetchNotifications to avoid recreating on each render
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = async () => {
     if (!user) {
       setNotifications([]);
       setUnreadCount(0);
@@ -104,16 +68,6 @@ export const useNotifications = () => {
     setLoading(true);
     setError(null);
 
-    // Try to get from cache first
-    const cachedData = getFromCache(user.id);
-    if (cachedData) {
-      console.log("Using cached notifications");
-      setNotifications(cachedData);
-      setUnreadCount(cachedData.filter(n => !n.is_read).length || 0);
-      setLoading(false);
-      return;
-    }
-
     try {
       console.log("Fetching notifications for user:", user.id);
       // Fetch notifications from the existing request_notifications table
@@ -121,8 +75,7 @@ export const useNotifications = () => {
         .from('request_notifications')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50); // Limit to 50 most recent notifications for better performance
+        .order('created_at', { ascending: false });
 
       if (fetchError) {
         console.error("Error fetching notifications:", fetchError);
@@ -130,11 +83,6 @@ export const useNotifications = () => {
       }
 
       console.log("Notifications received:", data);
-      // Save to cache
-      if (data) {
-        saveToCache(user.id, data);
-      }
-      
       setNotifications(data || []);
       setUnreadCount(data?.filter(n => !n.is_read).length || 0);
     } catch (err: any) {
@@ -142,9 +90,8 @@ export const useNotifications = () => {
       setError(err.message || 'Failed to fetch notifications');
     } finally {
       setLoading(false);
-      initialFetchDoneRef.current = true;
     }
-  }, [user]);
+  };
 
   const markAsRead = async (notificationId: string) => {
     try {
@@ -155,7 +102,7 @@ export const useNotifications = () => {
 
       if (updateError) throw updateError;
 
-      // Update local state without refetching
+      // Update local state
       setNotifications(prev =>
         prev.map(notif =>
           notif.id === notificationId
@@ -164,14 +111,6 @@ export const useNotifications = () => {
         )
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
-      
-      // Update cache
-      if (user) {
-        const updatedNotifications = notifications.map(n => 
-          n.id === notificationId ? {...n, is_read: true} : n
-        );
-        saveToCache(user.id, updatedNotifications);
-      }
     } catch (err: any) {
       console.error('Error marking notification as read:', err);
       toast.error('Failed to mark notification as read');
@@ -190,14 +129,11 @@ export const useNotifications = () => {
 
       if (updateError) throw updateError;
 
-      // Update local state without refetching
-      const updatedNotifications = notifications.map(n => ({ ...n, is_read: true }));
-      setNotifications(updatedNotifications);
+      // Update local state
+      setNotifications(prev =>
+        prev.map(notif => ({ ...notif, is_read: true }))
+      );
       setUnreadCount(0);
-      
-      // Update cache
-      saveToCache(user.id, updatedNotifications);
-      
       toast.success('All notifications marked as read');
     } catch (err: any) {
       console.error('Error marking all notifications as read:', err);
@@ -210,18 +146,18 @@ export const useNotifications = () => {
     if (!user) return;
 
     console.log("Setting up notifications for user:", user.id);
-    
-    // Only fetch on initial mount or user change
-    if (!initialFetchDoneRef.current) {
-      fetchNotifications();
+    fetchNotifications();
+
+    // Clean up any existing channel to prevent multiple subscriptions
+    if (channelRef.current) {
+      console.log("Removing existing notifications channel");
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
 
     // Set up real-time subscription to request_notifications
-    // Use the channel helper to avoid creating too many channels
-    const channelName = `request_notifications_${user.id}`;
-    const channel = getOrCreateChannel(channelName);
-    
-    channelRef.current = channel
+    const channel = supabase
+      .channel(`notifications-${user.id}-${Date.now()}`) // Add timestamp to make channel name unique
       .on('postgres_changes', 
         {
           event: '*', // Listen for all events (INSERT, UPDATE, DELETE)
@@ -235,15 +171,7 @@ export const useNotifications = () => {
           if (payload.eventType === 'INSERT') {
             // Add new notification to the list
             const newNotification = payload.new as Notification;
-            
-            // Update local state
-            setNotifications(prev => {
-              const updated = [newNotification, ...prev];
-              // Update cache
-              if (user) saveToCache(user.id, updated);
-              return updated;
-            });
-            
+            setNotifications(prev => [newNotification, ...prev]);
             setUnreadCount(prev => prev + 1);
             
             // Generate appropriate notification message based on type
@@ -276,37 +204,25 @@ export const useNotifications = () => {
           else if (payload.eventType === 'UPDATE') {
             // Update the notification in the list
             const updatedNotification = payload.new as Notification;
-            
-            // Update local state
-            setNotifications(prev => {
-              const updated = prev.map(n => n.id === updatedNotification.id ? updatedNotification : n);
-              // Update cache
-              if (user) saveToCache(user.id, updated);
-              return updated;
-            });
-            
+            setNotifications(prev => 
+              prev.map(n => n.id === updatedNotification.id ? updatedNotification : n)
+            );
             // Recalculate unread count
-            setUnreadCount(prev => {
-              // Count unread notifications
-              return notifications.filter(n => !n.is_read).length;
+            setNotifications(notifications => {
+              setUnreadCount(notifications.filter(n => !n.is_read).length);
+              return notifications;
             });
           }
           else if (payload.eventType === 'DELETE') {
             // Remove the notification from the list
             const oldNotification = payload.old as Notification;
-            
-            // Update local state
-            setNotifications(prev => {
-              const updated = prev.filter(n => n.id !== oldNotification.id);
-              // Update cache
-              if (user) saveToCache(user.id, updated);
-              return updated;
-            });
-            
+            setNotifications(prev => 
+              prev.filter(n => n.id !== oldNotification.id)
+            );
             // Recalculate unread count
-            setUnreadCount(prev => {
-              // Count unread notifications
-              return notifications.filter(n => !n.is_read).length;
+            setNotifications(notifications => {
+              setUnreadCount(notifications.filter(n => !n.is_read).length);
+              return notifications;
             });
           }
         }
@@ -315,13 +231,18 @@ export const useNotifications = () => {
         console.log("Notification subscription status:", status);
       });
 
+    // Save the channel reference for cleanup
+    channelRef.current = channel;
+
     // Clean up on unmount
     return () => {
+      console.log("Cleaning up notifications channel");
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
-  }, [user, fetchNotifications]);
+  }, [user]);
 
   return {
     notifications,

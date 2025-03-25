@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'react-hot-toast';
@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 export const useUnreadMessages = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuthStore();
+  const channelRef = useRef<any>(null);
 
   // Function to create a message notification
   const createMessageNotification = async (messageData: any) => {
@@ -54,28 +55,39 @@ export const useUnreadMessages = () => {
 
     // Initial fetch of unread messages
     const fetchUnreadCount = async () => {
-      const { count, error } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .eq('status', 'sent');
+      try {
+        const { count, error } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .eq('status', 'sent');
 
-      if (error) {
-        console.error('Error fetching unread messages:', error);
-        return;
-      }
+        if (error) {
+          console.error('Error fetching unread messages:', error);
+          return;
+        }
 
-      if (count !== null) {
-        console.log('Unread messages count:', count); // Debug log
-        setUnreadCount(count);
+        if (count !== null) {
+          console.log('Unread messages count:', count); // Debug log
+          setUnreadCount(count);
+        }
+      } catch (err) {
+        console.error('Error in fetchUnreadCount:', err);
       }
     };
 
     fetchUnreadCount();
 
-    // Subscribe to new messages
-    const subscription = supabase
-      .channel('messages')
+    // Clean up any existing subscription
+    if (channelRef.current) {
+      console.log('Cleaning up previous unread messages subscription');
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Subscribe to new messages with a unique channel name
+    const channel = supabase
+      .channel(`messages-${user.id}-${Date.now()}`) // Add timestamp to make channel name unique
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -92,10 +104,18 @@ export const useUnreadMessages = () => {
           setUnreadCount(prev => Math.max(0, prev - 1));
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Unread messages subscription status: ${status}`);
+      });
+
+    channelRef.current = channel;
 
     return () => {
-      subscription.unsubscribe();
+      console.log('Cleaning up unread messages subscription');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [user]);
 
