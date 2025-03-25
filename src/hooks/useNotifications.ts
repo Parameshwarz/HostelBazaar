@@ -7,7 +7,7 @@ export interface Notification {
   id: string;
   user_id: string;
   match_id?: string;
-  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system';
+  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system' | 'new_message';
   is_read: boolean;
   created_at: string;
 }

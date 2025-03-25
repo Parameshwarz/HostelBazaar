@@ -61,7 +61,7 @@ interface Notification {
   id: string;
   user_id: string;
   match_id?: string;
-  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system';
+  type: 'new_match' | 'match_accepted' | 'match_rejected' | 'match_completed' | 'system' | 'new_message';
   is_read: boolean;
   created_at: string;
 }
@@ -123,10 +123,14 @@ export default function Navbar() {
         toast.error('Match request declined');
         break;
       case 'view':
-        // Handle view - navigate to matches page for match notifications
+        // Handle view - navigate to appropriate page based on notification type
         const notification = notifications.find(n => n.id === notificationId);
-        if (notification?.match_id) {
-          navigate('/matches');
+        if (notification) {
+          if (notification.type === 'new_message') {
+            navigate('/messages');
+          } else if (notification.match_id) {
+            navigate('/matches');
+          }
         }
         break;
     }
@@ -466,11 +470,15 @@ export default function Navbar() {
                   message = 'A match was successfully completed.';
                   icon = notificationCategories.find(c => c.id === 'trade')?.icon;
                   break;
-                case 'system':
-                  title = 'System Notification';
-                  message = 'You have a new system notification.';
-                  icon = notificationCategories.find(c => c.id === 'system')?.icon;
+                case 'new_message':
+                  title = 'New Message';
+                  message = 'You have a new message!';
+                  icon = notificationCategories.find(c => c.id === 'message')?.icon;
                   break;
+                default:
+                  title = `${notification.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}`;
+                  message = 'You have a new notification.';
+                  icon = notificationCategories.find(c => c.id === 'system')?.icon;
               }
               
               const IconComponent = icon || Bell;
