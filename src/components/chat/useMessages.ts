@@ -13,6 +13,7 @@ export const useMessages = (chatId: string | null, userId: string, containerRef?
   const messagesPerPage = 50;
   const channelRef = useRef<any>(null);
   const lastMessageTimeRef = useRef<Date>(new Date());
+  const channelNameRef = useRef<string | null>(null);
 
   // Function to scroll to the bottom of the container
   const scrollToBottom = useCallback((smooth: boolean = true) => {
@@ -475,6 +476,72 @@ export const useMessages = (chatId: string | null, userId: string, containerRef?
       }
     };
   }, [chatId, userId, fetchMessages]);
+
+  const createRealtimeChannel = (chatId: string, userId: string) => {
+    // Clean up existing channel if any
+    if (channelRef.current) {
+      console.log(`Removing existing channel: ${channelNameRef.current}`);
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Create a unique channel name for this chat
+    const channelName = `chat:${chatId}`;
+    channelNameRef.current = channelName;
+    console.log(`Creating new chat channel: ${channelName}`);
+
+    const channel = supabase.channel(channelName);
+
+    // Subscribe only to new messages, not all message changes
+    // This reduces database load and improves performance
+    channel
+      .on('postgres_changes', {
+        event: 'INSERT', // Only listen for new messages, not updates
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`,
+      }, (payload) => {
+        // Skip messages sent by current user to avoid duplication
+        // They're already added optimistically
+        if (payload.new && payload.new.sender_id === userId) {
+          console.log('Skipping own message in real-time');
+          return;
+        }
+
+        // Add new message to the list
+        const newMessage = payload.new as Message;
+        console.log('Real-time message received:', newMessage);
+        
+        // Update message status to received for real-time tracking
+        if (newMessage.receiver_id === userId) {
+          markMessageAsReceived(newMessage.id);
+        }
+
+        setMessages((prevMessages) => {
+          // Check if message already exists to prevent duplicates
+          const exists = prevMessages.some(m => m.id === newMessage.id);
+          if (exists) {
+            console.log('Message already exists, skipping:', newMessage.id);
+            return prevMessages;
+          }
+          
+          const updatedMessages = [...prevMessages, newMessage];
+          
+          // Sort messages by created_at
+          updatedMessages.sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+          
+          return updatedMessages;
+        });
+      })
+      .subscribe((status) => {
+        console.log(`Chat channel ${channelName} status:`, status);
+      });
+
+    channelRef.current = channel;
+    return channel;
+  };
 
   return {
     messages,
