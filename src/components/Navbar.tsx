@@ -113,33 +113,42 @@ export default function Navbar() {
 
   // Handle notification action
   const handleNotificationAction = (action: string, notificationId: string) => {
+    const notification = notifications.find(n => n.id === notificationId);
+    if (!notification) return;
+
+    // Mark notification as read first (for all actions)
+    markAsRead(notificationId);
+    
+    // Play sound if enabled (for user feedback)
+    if (soundEnabled) playNotificationSound();
+
+    // Handle specific actions
     switch (action) {
       case 'accept':
-        // Handle accept
         toast.success('Match request accepted');
+        // Additional logic for accepting a match request
         break;
+        
       case 'decline':
-        // Handle decline
         toast.error('Match request declined');
+        // Additional logic for declining a match request
         break;
+        
+      case 'reply':
+        navigate('/messages');
+        // The notification has already been marked as read
+        toast.success('Navigating to messages to reply');
+        break;
+        
       case 'view':
-        // Handle view - navigate to appropriate page based on notification type
-        const notification = notifications.find(n => n.id === notificationId);
-        if (notification) {
-          if (notification.type === 'new_message') {
-            navigate('/messages');
-          } else if (notification.match_id) {
-            navigate('/matches');
-          }
+        // Navigate to the appropriate page based on notification type
+        if (notification.type === 'new_message') {
+          navigate('/messages');
+        } else if (notification.match_id) {
+          navigate('/matches');
         }
         break;
     }
-    
-    // Mark notification as read
-    markAsRead(notificationId);
-    
-    // Play sound if enabled
-    if (soundEnabled) playNotificationSound();
   };
 
   // Check if current path is services-related
@@ -439,11 +448,14 @@ export default function Navbar() {
   );
 
   const renderNotifications = () => {
+    // Filter out read notifications for the navbar display
+    const unreadNotificationsOnly = notifications.filter(n => !n.is_read);
+    
     return (
       <div className="max-h-96 overflow-y-auto">
-        {notifications.length > 0 ? (
+        {unreadNotificationsOnly.length > 0 ? (
           <div className="divide-y divide-gray-200 dark:divide-dark-border">
-            {notifications.map((notification) => {
+            {unreadNotificationsOnly.map((notification) => {
               // Determine title and message based on notification type
               let title = 'Notification';
               let message = '';
@@ -486,7 +498,7 @@ export default function Navbar() {
               return (
                 <div 
                   key={notification.id}
-                  className={`p-4 ${!notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className="p-4 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0 pt-0.5">
@@ -516,6 +528,14 @@ export default function Navbar() {
                             </button>
                           </>
                         )}
+                        {notification.type === 'new_message' && (
+                          <button
+                            onClick={() => handleNotificationAction('reply', notification.id)}
+                            className="text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            Reply
+                          </button>
+                        )}
                         <button
                           onClick={() => handleNotificationAction('view', notification.id)}
                           className="text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
@@ -535,7 +555,7 @@ export default function Navbar() {
         ) : (
           <div className="p-4 text-center text-gray-500 dark:text-dark-text-secondary">
             <Bell className="h-6 w-6 mx-auto mb-2 text-gray-400 dark:text-dark-text-tertiary" />
-            <p className="text-sm">No notifications yet</p>
+            <p className="text-sm">No new notifications</p>
           </div>
         )}
       </div>

@@ -19,6 +19,43 @@ export const useNotifications = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Function to get message sender info and enhance the toast notification
+  const getSenderInfoForMessageNotification = async (notificationId: string) => {
+    if (!user) return;
+    
+    try {
+      // First get the notification details with match_id
+      const { data: notificationData, error: notifError } = await supabase
+        .from('request_notifications')
+        .select('*')
+        .eq('id', notificationId)
+        .single();
+        
+      if (notifError || !notificationData) {
+        console.error("Error fetching notification details:", notifError);
+        return;
+      }
+      
+      // Check if it's a message notification but doesn't have the match_id we need
+      if (notificationData.type === 'new_message' && !notificationData.match_id) {
+        // We don't have sender info here, but we still show a generic notification
+        return;
+      }
+      
+      // If there's a match_id, we could enhance the notification further
+      // For example, get the sender's profile to show their name
+      // This is just placeholder logic since we don't know your exact database structure
+      if (notificationData.match_id) {
+        toast.success('New message from chat', {
+          duration: 4000,
+          icon: '💬'
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching message details:", err);
+    }
+  };
+
   const fetchNotifications = async () => {
     if (!user) {
       setNotifications([]);
@@ -131,12 +168,30 @@ export const useNotifications = () => {
             
             // Generate appropriate notification message based on type
             let message = 'You have a new notification';
-            if (newNotification.type === 'new_match') message = 'You have a new match request';
-            if (newNotification.type === 'match_accepted') message = 'Your match request was accepted';
-            if (newNotification.type === 'match_rejected') message = 'Your match request was rejected';
-            if (newNotification.type === 'match_completed') message = 'A match was completed';
+            switch (newNotification.type) {
+              case 'new_match':
+                message = 'You have a new match request';
+                break;
+              case 'match_accepted':
+                message = 'Your match request was accepted';
+                break;
+              case 'match_rejected':
+                message = 'Your match request was rejected';
+                break;
+              case 'match_completed':
+                message = 'A match was completed';
+                break;
+              case 'new_message':
+                message = 'You have a new message';
+                // For message notifications, we'll try to get details asynchronously
+                getSenderInfoForMessageNotification(newNotification.id);
+                break;
+            }
             
-            toast.success(message);
+            toast.success(message, {
+              duration: 4000,
+              icon: '🔔'
+            });
           } 
           else if (payload.eventType === 'UPDATE') {
             // Update the notification in the list

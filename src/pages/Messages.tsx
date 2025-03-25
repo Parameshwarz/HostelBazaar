@@ -120,6 +120,27 @@ export const Messages = () => {
       }
       
       await sendMessage(content, selectedChat.id);
+      
+      // Create a notification for the recipient
+      try {
+        const recipient_id = selectedChat.other_user.id;
+        
+        // Create a notification in the request_notifications table
+        await supabase
+          .from('request_notifications')
+          .insert([
+            {
+              user_id: recipient_id, // The recipient of the message
+              type: 'new_message',
+              is_read: false
+            }
+          ]);
+          
+        console.log("Message notification created for recipient:", recipient_id);
+      } catch (notifError) {
+        console.error("Error creating message notification:", notifError);
+      }
+      
       // Scroll is now handled in the useMessages hook
     } catch (error) {
       console.error('Error sending message:', error);
